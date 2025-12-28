@@ -1,0 +1,134 @@
+# Crawl_R2R Configuration
+# 社交媒體知識提取系統配置
+
+# ===========================================
+# 目標頻道
+# ===========================================
+channels:
+  youtube:
+    - name: "Dan Koe"
+      url: "https://youtube.com/@dankoetalks"
+      language: "en"
+      
+  xiaohongshu:
+    - name: "創業分享"
+      url: "https://xhslink.com/m/Arc4LKxLJBG"
+      language: "zh-TW"
+
+# ===========================================
+# API 優先順序 (80/20 法則 - 免費優先)
+# ===========================================
+llm_providers:
+  - name: "gemini"
+    priority: 1
+    model: "gemini-2.5-flash-lite"
+    api_keys:
+      - "${GEMINI_API_KEY}"
+      - "${GEMINI_API_KEY_BACKUP}"
+    base_url: "https://generativelanguage.googleapis.com/v1beta"
+    
+  - name: "openrouter"
+    priority: 2
+    model: "google/gemini-2.0-flash-exp:free"
+    api_key: "${OPENROUTER_API_KEY}"
+    base_url: "https://openrouter.ai/api/v1"
+    
+  - name: "cerebras"
+    priority: 3
+    model: "qwen/qwen3-235b"
+    api_key: "${CEREBRAS_API_KEY}"
+    base_url: "https://api.cerebras.ai/v1"
+    
+  - name: "lmstudio"
+    priority: 4
+    model: "qwen3-30b-a3b"
+    base_url: "http://localhost:1234/v1"
+    
+  - name: "openai"
+    priority: 5
+    model: "gpt-4o-mini"
+    api_key: "${OPENAI_API_KEY}"
+    base_url: "https://api.openai.com/v1"
+
+# ===========================================
+# Embedding 配置
+# ===========================================
+embedding:
+  provider: "openai"
+  model: "text-embedding-3-small"
+  api_key: "${OPENAI_API_KEY}"
+  dimension: 1536
+
+# ===========================================
+# R2R 配置
+# ===========================================
+r2r:
+  collection_name: "crawl_r2r_dev"
+  database:
+    provider: "postgres"
+    host: "localhost"
+    port: 5432
+    user: "user"
+    password: "password"
+    db_name: "r2r_db"
+
+# ===========================================
+# 資料目錄
+# ===========================================
+directories:
+  data_root: "~/Documents/Crawl_R2R_Data"
+  raw: "~/Documents/Crawl_R2R_Data/raw"
+  processed: "~/Documents/Crawl_R2R_Data/processed"
+  knowledge: "~/Documents/Crawl_R2R_Data/knowledge"
+
+# ===========================================
+# 語音辨識配置
+# ===========================================
+transcription:
+  # 優先使用平台字幕
+  prefer_subtitles: true
+  # 字幕語言優先順序
+  subtitle_langs: ["zh-TW", "zh-CN", "zh", "en"]
+  # Whisper 備用配置
+  whisper:
+    model: "large-v3"
+    language: "auto"
+    device: "mps"  # Apple Silicon GPU
+
+# ===========================================
+# 知識提取配置
+# ===========================================
+knowledge_extraction:
+  # 提取重點領域
+  domains:
+    - name: "商業模式創新"
+      keywords: ["商業模式", "免費模式", "平台模式", "訂閱制", "盈利模式"]
+    - name: "品牌定位策略"
+      keywords: ["定位", "差異化", "心智", "品類", "競爭優勢"]
+    - name: "流量獲取方法"
+      keywords: ["流量", "私域", "引流", "轉化", "獲客"]
+    - name: "AI 應用實踐"
+      keywords: ["AI", "大模型", "AIGC", "自動化", "ChatGPT"]
+    - name: "創業者心態"
+      keywords: ["創業", "一人公司", "副業", "斜槓", "財務自由"]
+      
+  # 術語轉換 (簡體→繁體)
+  term_mappings:
+    "商业模式": "商業模式"
+    "心智份额": "心智佔有率"
+    "私域流量": "私域流量池"
+    "斜杠青年": "斜槓青年"
+    "个人IP": "個人IP"
+
+# ===========================================
+# 處理設定
+# ===========================================
+processing:
+  # 批次處理大小
+  batch_size: 10
+  # 重試次數
+  max_retries: 3
+  # 請求間隔 (秒)
+  request_delay: 1.0
+  # 並行處理數
+  max_workers: 4

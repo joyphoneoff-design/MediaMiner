@@ -1,0 +1,34 @@
+# Crawl_R2R Requirements
+# 社交媒體知識提取系統依賴
+
+# Web Scraping
+yt-dlp>=2024.0.0
+youtube-transcript-api>=0.6.0
+requests>=2.31.0
+
+# AI/LLM
+google-generativeai>=0.8.0
+openai>=1.0.0
+tiktoken>=0.5.0
+
+# Audio Processing
+openai-whisper>=20231117
+ffmpeg-python>=0.2.0
+
+# Data Processing
+pyyaml>=6.0
+python-dotenv>=1.0.0
+opencc-python-reimplemented>=0.1.7
+
+# File Watching
+watchdog>=3.0.0
+
+# UI
+streamlit>=1.28.0
+
+# R2R Integration
+psycopg2-binary>=2.9.0
+
+# Utilities
+tqdm>=4.66.0
+rich>=13.0.0

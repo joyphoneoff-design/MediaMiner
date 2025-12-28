@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""
+Metadata 注入器
+符合 rag_data_washer 規則
+"""
+
+import re
+from pathlib import Path
+from typing import Dict, List, Optional
+from datetime import datetime
+
+try:
+    from opencc import OpenCC
+    OPENCC_AVAILABLE = True
+except ImportError:
+    OPENCC_AVAILABLE = False
+
+
+class MetadataInjector:
+    """Metadata 注入器"""
+    
+    # 術語轉換 (簡體 → 繁體商業術語)
+    TERM_MAPPINGS = {
+        "商业模式": "商業模式",
+        "心智份额": "心智佔有率",
+        "私域流量": "私域流量池",
+        "斜杠青年": "斜槓青年",
+        "个人IP": "個人IP",
+        "定位": "定位",
+        "差异化": "差異化",
+        "复购": "復購",
+        "获客": "獲客",
+        "用户画像": "用戶畫像",
+        "痛点": "痛點",
+        "爆款": "爆款",
+        "变现": "變現",
+        "流量池": "流量池",
+        "裂变": "裂變",
+        "种草": "種草",
+        "带货": "帶貨",
+    }
+    
+    def __init__(self):
+        if OPENCC_AVAILABLE:
+            self.cc = OpenCC('s2twp')  # 簡體 → 繁體 (台灣偏好)
+        else:
+            self.cc = None
+    
+    def convert_to_traditional(self, text: str) -> str:
+        """轉換為繁體中文"""
+        if self.cc:
+            text = self.cc.convert(text)
+        
+        # 應用術語轉換
+        for simplified, traditional in self.TERM_MAPPINGS.items():
+            text = text.replace(simplified, traditional)
+        
+        return text
+    
+    def generate_metadata(self, 
+                          title: str,
+                          author: str = None,
+                          source: str = None,
+                          platform: str = None,
+                          url: str = None,
+                          duration: str = None,
+                          speakers: List[Dict] = None,
+                          keywords: List[str] = None,
+                          summary: str = None,
+                          knowledge_points: List[str] = None,
+                          tags: List[str] = None) -> str:
+        """
+        生成 YAML frontmatter
+        
+        Returns:
+            YAML 格式的 metadata
+        """
+        metadata = ["---"]
+        
+        # 基本資訊
+        metadata.append(f'title: "{self._escape_yaml(title)}"')
+        
+        if author:
+            metadata.append(f'author: "{self._escape_yaml(author)}"')
+        
+        metadata.append(f'date: "{datetime.now().strftime("%Y-%m-%d")}"')
+        
+        if source:
+            metadata.append(f'source: "{self._escape_yaml(source)}"')
+        
+        if platform:
+            metadata.append(f'platform: "{platform}"')
+        
+        if url:
+            metadata.append(f'url: "{url}"')
+        
+        if duration:
+            metadata.append(f'duration: "{duration}"')
+        
+        # 講者資訊
+        if speakers:
+            metadata.append("speakers:")
+            for speaker in speakers:
+                metadata.append(f'  - role: "{speaker.get("role", "unknown")}"')
+                metadata.append(f'    name: "{self._escape_yaml(speaker.get("name", ""))}"')
+        
+        # 關鍵字和標籤
+        if keywords:
+            keywords_str = ", ".join([f'"{k}"' for k in keywords[:10]])
+            metadata.append(f'keywords: [{keywords_str}]')
+        
+        if tags:
+            tags_str = ", ".join([f'"{t}"' for t in tags[:5]])
+            metadata.append(f'tags: [{tags_str}]')
+        
+        # 摘要
+        if summary:
+            summary = self._escape_yaml(summary)
+            metadata.append(f'summary: "{summary}"')
+        
+        # 知識點
+        if knowledge_points:
+            metadata.append("knowledge_points:")
+            for point in knowledge_points[:5]:
+                metadata.append(f'  - "{self._escape_yaml(point)}"')
+        
+        # 處理時間
+        metadata.append(f'last_processed: "{datetime.now().isoformat()}"')
+        
+        metadata.append("---")
+        
+        return '\n'.join(metadata)
+    
+    def _escape_yaml(self, text: str) -> str:
+        """轉義 YAML 特殊字符"""
+        if not text:
+            return ""
+        # 移除換行符
+        text = text.replace('\n', ' ').replace('\r', '')
+        # 轉義引號
+        text = text.replace('"', '\\"')
+        return text
+    
+    def create_markdown(self,
+                        content: str,
+                        knowledge: str,
+                        metadata_kwargs: Dict) -> str:
+        """
+        創建完整的 Markdown 文件
+        
+        Args:
+            content: 原始內容 (逐字稿)
+            knowledge: 提取的知識
+            metadata_kwargs: metadata 參數
+            
+        Returns:
+            完整的 Markdown 內容
+        """
+        # 生成 metadata
+        metadata = self.generate_metadata(**metadata_kwargs)
+        
+        # 轉換為繁體
+        content = self.convert_to_traditional(content)
+        knowledge = self.convert_to_traditional(knowledge)
+        
+        # 組合文件
+        markdown_parts = [
+            metadata,
+            "",
+            "## 商業知識提取",
+            "",
+            knowledge,
+            "",
+            "---",
+            "",
+            "## 原始逐字稿",
+            "",
+            content,
+        ]
+        
+        return '\n'.join(markdown_parts)
+    
+    def generate_safe_filename(self, title: str, max_length: int = 80) -> str:
+        """
+        生成安全的檔名
+        
+        Args:
+            title: 原始標題
+            max_length: 最大長度
+            
+        Returns:
+            安全的檔名 (不含副檔名)
+        """
+        # 移除特殊字符
+        safe_title = re.sub(r'[\\/*?:"<>|]', '_', title)
+        # 移除連續空白
+        safe_title = re.sub(r'\s+', '_', safe_title)
+        # 轉換為小寫蛇形命名
+        safe_title = safe_title.lower()
+        # 限制長度
+        if len(safe_title) > max_length:
+            safe_title = safe_title[:max_length]
+        # 移除尾部下劃線
+        safe_title = safe_title.rstrip('_')
+        
+        return safe_title
+
+
+if __name__ == "__main__":
+    print("📝 Crawl_R2R Metadata Injector")
+    print("=" * 50)
+    
+    injector = MetadataInjector()
+    
+    # 測試
+    metadata = injector.generate_metadata(
+        title="創業者必看：商業模式設計",
+        author="張三",
+        source="Dan Koe",
+        platform="youtube",
+        url="https://youtube.com/watch?v=xxx",
+        duration="15:30",
+        speakers=[
+            {"role": "host", "name": "主持人"},
+            {"role": "guest", "name": "張三"}
+        ],
+        keywords=["商業模式", "創業", "定位"],
+        summary="本期節目探討商業模式設計的核心要素",
+        tags=["創業", "商業模式"]
+    )
+    
+    print("生成的 Metadata:")
+    print(metadata)
+    
+    # 測試繁簡轉換
+    test_text = "私域流量是一个重要的商业模式"
+    converted = injector.convert_to_traditional(test_text)
+    print(f"\n繁簡轉換: {test_text} → {converted}")
