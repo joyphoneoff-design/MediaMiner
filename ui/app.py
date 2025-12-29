@@ -191,23 +191,29 @@ if page == "📺 頻道擷取":
     if st.session_state.channel_videos:
         st.markdown("### 📹 影片列表")
         
-        # 全選/取消全選
+        # 定義 checkbox 變化處理函數
+        def toggle_video(idx):
+            """切換單一影片選取狀態"""
+            key = f"vid_{idx}"
+            if st.session_state.get(key, False):
+                st.session_state.selected_videos.add(idx)
+            else:
+                st.session_state.selected_videos.discard(idx)
+        
+        # 全選/取消全選 (使用獨立計數器避免 key 衝突)
+        if 'select_version' not in st.session_state:
+            st.session_state.select_version = 0
+        
         col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
             if st.button("✅ 全選"):
                 st.session_state.selected_videos = set(range(len(st.session_state.channel_videos)))
-                # 清除所有 checkbox 的緩存狀態
-                for key in list(st.session_state.keys()):
-                    if key.startswith("vid_"):
-                        del st.session_state[key]
+                st.session_state.select_version += 1  # 強制重新生成所有 checkbox
                 st.rerun()
         with col2:
             if st.button("❌ 取消全選"):
                 st.session_state.selected_videos = set()
-                # 清除所有 checkbox 的緩存狀態
-                for key in list(st.session_state.keys()):
-                    if key.startswith("vid_"):
-                        del st.session_state[key]
+                st.session_state.select_version += 1  # 強制重新生成所有 checkbox
                 st.rerun()
         with col3:
             st.info(f"已選擇 **{len(st.session_state.selected_videos)}** / {len(st.session_state.channel_videos)} 部影片")
@@ -240,21 +246,31 @@ if page == "📺 頻道擷取":
         start_idx = st.session_state.video_page * page_size
         end_idx = min(start_idx + page_size, len(videos))
         
+        # 使用版本號作為 key 前綴，確保全選/取消全選後重新生成 checkbox
+        version = st.session_state.select_version
+        
         for i in range(start_idx, end_idx):
             video = videos[i]
             col1, col2, col3, col4 = st.columns([0.5, 4, 1, 1])
             
             with col1:
+                # 使用版本號確保全選/取消全選後 checkbox 正確更新
+                checkbox_key = f"v{version}_vid_{i}"
+                is_selected = i in st.session_state.selected_videos
+                
                 checked = st.checkbox(
                     "", 
-                    value=i in st.session_state.selected_videos,
-                    key=f"vid_{i}",
+                    value=is_selected,
+                    key=checkbox_key,
                     label_visibility="collapsed"
                 )
-                if checked and i not in st.session_state.selected_videos:
-                    st.session_state.selected_videos.add(i)
-                elif not checked and i in st.session_state.selected_videos:
-                    st.session_state.selected_videos.discard(i)
+                
+                # 處理狀態變化
+                if checked != is_selected:
+                    if checked:
+                        st.session_state.selected_videos.add(i)
+                    else:
+                        st.session_state.selected_videos.discard(i)
             
             with col2:
                 title = video['title'][:60] + "..." if len(video['title']) > 60 else video['title']
