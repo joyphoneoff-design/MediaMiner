@@ -120,13 +120,14 @@ class TranscriptFetcher:
         
         return None
     
-    def fetch_with_whisper(self, video_url: str, model: str = "large-v3") -> Optional[Dict]:
+    def fetch_with_whisper(self, video_url: str, model: str = "small") -> Optional[Dict]:
         """
-        使用 Whisper 進行語音辨識
+        使用 MLX-Whisper 進行語音辨識 (Apple Silicon GPU 加速)
         
         Args:
             video_url: 影片 URL
-            model: Whisper 模型
+            model: Whisper 模型 (tiny/base/small/medium/large-v3)
+                   80/20 推薦: small (速度與品質平衡)
             
         Returns:
             {'text': ..., 'language': ..., 'source': 'whisper'}
@@ -136,44 +137,96 @@ class TranscriptFetcher:
         
         # 下載音訊
         audio_file = temp_dir / "audio.mp3"
+        
+        # 清理舊檔案
+        if audio_file.exists():
+            audio_file.unlink()
+        
         cmd = [
             "yt-dlp",
             "-x",
             "--audio-format", "mp3",
             "-o", str(audio_file),
+            "--cookies-from-browser", "chrome",
             video_url
         ]
         
         try:
-            subprocess.run(cmd, capture_output=True, check=True)
+            subprocess.run(cmd, capture_output=True, check=True, timeout=120)
         except subprocess.CalledProcessError as e:
             print(f"Failed to download audio: {e}")
             return None
+        except subprocess.TimeoutExpired:
+            print("Audio download timeout")
+            return None
         
-        # 使用 Whisper 辨識
+        if not audio_file.exists():
+            # yt-dlp 可能會加上不同副檔名
+            for ext in ['.mp3', '.m4a', '.webm', '.opus']:
+                alt_file = temp_dir / f"audio{ext}"
+                if alt_file.exists():
+                    audio_file = alt_file
+                    break
+        
+        if not audio_file.exists():
+            print("Audio file not found")
+            return None
+        
+        # 使用 MLX-Whisper (Apple Silicon GPU 加速)
         try:
-            cmd = [
-                "whisper",
+            import mlx_whisper
+            
+            print(f"⏳ 使用 MLX-Whisper ({model}) GPU 加速辨識中...")
+            result = mlx_whisper.transcribe(
                 str(audio_file),
-                "--model", model,
-                "--output_format", "txt",
-                "--output_dir", str(temp_dir)
-            ]
+                path_or_hf_repo=f"mlx-community/whisper-{model}-mlx",
+            )
             
-            subprocess.run(cmd, capture_output=True, check=True)
+            text = result.get("text", "")
+            language = result.get("language", "auto")
             
-            # 讀取輸出
-            txt_file = temp_dir / "audio.txt"
-            if txt_file.exists():
-                text = txt_file.read_text(encoding='utf-8')
+            # 清理暫存檔
+            try:
+                audio_file.unlink()
+            except:
+                pass
+            
+            if text:
                 return {
                     'text': text,
-                    'language': 'auto',
-                    'source': 'whisper',
+                    'language': language,
+                    'source': 'mlx-whisper',
                     'model': model
                 }
-        except subprocess.CalledProcessError as e:
-            print(f"Whisper error: {e}")
+                
+        except ImportError:
+            print("MLX-Whisper not installed, falling back to CLI whisper")
+            # Fallback to CLI whisper
+            try:
+                cmd = [
+                    "whisper",
+                    str(audio_file),
+                    "--model", model,
+                    "--output_format", "txt",
+                    "--output_dir", str(temp_dir)
+                ]
+                
+                subprocess.run(cmd, capture_output=True, check=True, timeout=600)
+                
+                txt_file = temp_dir / "audio.txt"
+                if txt_file.exists():
+                    text = txt_file.read_text(encoding='utf-8')
+                    return {
+                        'text': text,
+                        'language': 'auto',
+                        'source': 'whisper-cli',
+                        'model': model
+                    }
+            except Exception as e:
+                print(f"Whisper CLI error: {e}")
+        
+        except Exception as e:
+            print(f"MLX-Whisper error: {e}")
         
         return None
     
