@@ -293,10 +293,13 @@ if page == "📺 頻道擷取":
         # ========== 步驟 3: 開始處理 ==========
         st.markdown("### 🚀 開始下載處理")
         
-        col1, col2 = st.columns([1, 2])
+        # 使用批次處理而非多線程以避免記憶體問題
+        col1, col2 = st.columns(2)
         with col1:
-            concurrent_workers = st.slider("並行處理數", min_value=1, max_value=8, value=4, 
-                                           help="根據網路性能調整")
+            batch_size = st.slider("批次大小", min_value=1, max_value=10, value=3, 
+                                   help="每批處理的影片數量，較小值可減少記憶體使用")
+        with col2:
+            st.caption("💡 **建議**: 批次大小 3-5 較為穩定。過大可能導致記憶體不足。")
         
         if st.button("🚀 開始下載字幕並處理", type="primary", 
                      disabled=len(st.session_state.selected_videos) == 0 or st.session_state.processing):
@@ -305,90 +308,131 @@ if page == "📺 頻道擷取":
             selected_indices = sorted(st.session_state.selected_videos)
             selected_videos = [st.session_state.channel_videos[i] for i in selected_indices]
             
-            st.info(f"🎬 準備處理 {len(selected_videos)} 部影片 (並行數: {concurrent_workers})")
+            st.info(f"🎬 準備處理 {len(selected_videos)} 部影片 (批次大小: {batch_size})")
             
             progress_bar = st.progress(0, text="初始化...")
             status_container = st.empty()
-            results_container = st.container()
+            metrics_placeholder = st.empty()
             
             try:
-                from concurrent.futures import ThreadPoolExecutor, as_completed
-                import threading
+                import time
+                import gc
                 
-                # 初始化元件
-                fetcher = TranscriptFetcher()
-                extractor = KnowledgeExtractor()
-                injector = MetadataInjector()
-                
+                # 初始化元件 (每批重新初始化以釋放記憶體)
                 output_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
                 output_dir.mkdir(parents=True, exist_ok=True)
                 
                 results = []
-                lock = threading.Lock()
-                completed = [0]  # 使用 list 讓 closure 可修改
+                start_time = time.time()
+                error_types = {}
                 
-                def process_video(video):
-                    """處理單一影片"""
-                    try:
-                        # 獲取逐字稿
-                        transcript = fetcher.fetch(video['url'])
-                        
-                        if transcript:
-                            # 提取知識
-                            knowledge = extractor.process_transcript(
-                                transcript['text'],
-                                video_info={
-                                    'title': video['title'],
-                                    'channel': video.get('channel', ''),
-                                    'duration': video.get('duration')
-                                }
-                            )
-                            
-                            # 生成 MD
-                            md_content = injector.create_markdown(
-                                content=transcript['text'],
-                                knowledge=knowledge.get('knowledge', ''),
-                                video_info={
-                                    'title': video['title'],
-                                    'source': video.get('channel', ''),
-                                    'platform': 'youtube',
-                                    'url': video['url'],
-                                    'duration': video.get('duration')
-                                }
-                            )
-                            
-                            # 保存
-                            filename = injector.generate_safe_filename(video['title'])
-                            output_file = output_dir / f"{filename}.md"
-                            output_file.write_text(md_content, encoding='utf-8')
-                            
-                            return {'video': video, 'success': True, 'file': str(output_file)}
-                        else:
-                            return {'video': video, 'success': False, 'error': '無法獲取字幕'}
-                    
-                    except Exception as e:
-                        return {'video': video, 'success': False, 'error': str(e)}
+                # 分批處理
+                total_batches = (len(selected_videos) + batch_size - 1) // batch_size
                 
-                # 多線程處理
-                with ThreadPoolExecutor(max_workers=concurrent_workers) as executor:
-                    futures = {executor.submit(process_video, v): v for v in selected_videos}
+                for batch_idx in range(total_batches):
+                    batch_start = batch_idx * batch_size
+                    batch_end = min(batch_start + batch_size, len(selected_videos))
+                    batch_videos = selected_videos[batch_start:batch_end]
                     
-                    for future in as_completed(futures):
-                        result = future.result()
-                        results.append(result)
+                    status_container.info(f"📦 處理批次 {batch_idx + 1}/{total_batches} ({len(batch_videos)} 部影片)")
+                    
+                    # 每批重新建立元件以避免記憶體累積
+                    fetcher = TranscriptFetcher()
+                    extractor = KnowledgeExtractor()
+                    injector = MetadataInjector()
+                    
+                    for i, video in enumerate(batch_videos):
+                        video_idx = batch_start + i + 1
+                        progress = int((video_idx / len(selected_videos)) * 100)
+                        progress_bar.progress(progress, text=f"處理: {video_idx}/{len(selected_videos)} - {video['title'][:30]}...")
                         
-                        with lock:
-                            completed[0] += 1
-                            progress = int((completed[0] / len(selected_videos)) * 100)
-                            progress_bar.progress(progress, 
-                                text=f"處理中: {completed[0]}/{len(selected_videos)} - {result['video']['title'][:30]}...")
-                            st.session_state.processed_count += 1 if result['success'] else 0
+                        try:
+                            # 獲取逐字稿
+                            transcript = fetcher.fetch(video['url'])
+                            
+                            if transcript:
+                                # 提取知識
+                                knowledge = extractor.process_transcript(
+                                    transcript['text'],
+                                    video_info={
+                                        'title': video['title'],
+                                        'channel': video.get('channel', ''),
+                                        'duration': video.get('duration')
+                                    }
+                                )
+                                
+                                # 生成 MD
+                                md_content = injector.create_markdown(
+                                    content=transcript['text'],
+                                    knowledge=knowledge.get('knowledge', ''),
+                                    video_info={
+                                        'title': video['title'],
+                                        'source': video.get('channel', ''),
+                                        'platform': 'youtube',
+                                        'url': video['url'],
+                                        'duration': video.get('duration')
+                                    }
+                                )
+                                
+                                # 保存
+                                filename = injector.generate_safe_filename(video['title'])
+                                output_file = output_dir / f"{filename}.md"
+                                output_file.write_text(md_content, encoding='utf-8')
+                                
+                                results.append({
+                                    'video': video, 
+                                    'success': True, 
+                                    'file': str(output_file),
+                                    'source': transcript.get('source', 'unknown')
+                                })
+                                st.session_state.processed_count += 1
+                            else:
+                                results.append({'video': video, 'success': False, 'error': '無法獲取字幕'})
+                                error_types['無法獲取字幕'] = error_types.get('無法獲取字幕', 0) + 1
+                        
+                        except Exception as e:
+                            error_msg = str(e)[:50]
+                            results.append({'video': video, 'success': False, 'error': error_msg})
+                            error_types[error_msg] = error_types.get(error_msg, 0) + 1
+                    
+                    # 批次完成後清理記憶體
+                    del fetcher, extractor, injector
+                    gc.collect()
+                    
+                    # 批次間短暫休息避免速率限制
+                    if batch_idx < total_batches - 1:
+                        time.sleep(1)
+                
+                # 計算執行統計
+                elapsed_time = time.time() - start_time
+                success_count = sum(1 for r in results if r['success'])
                 
                 progress_bar.progress(100, text="✅ 完成!")
                 
+                # 顯示統計指標
+                with metrics_placeholder.container():
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("✅ 成功", success_count)
+                    with col2:
+                        st.metric("❌ 失敗", len(results) - success_count)
+                    with col3:
+                        st.metric("⏱️ 耗時", f"{elapsed_time:.1f}s")
+                    with col4:
+                        rate = success_count / elapsed_time if elapsed_time > 0 else 0
+                        st.metric("📊 速率", f"{rate:.2f}/s")
+                    
+                    # 顯示錯誤分布
+                    if error_types:
+                        st.markdown("**錯誤類型分布:**")
+                        for err, count in sorted(error_types.items(), key=lambda x: -x[1])[:5]:
+                            st.caption(f"  • {err}: {count} 次")
+                
                 # 顯示結果
-                success_count = sum(1 for r in results if r['success'])
-                st.success(f"🎉 完成! 成功處理 {success_count}/{len(selected_videos)} 部影片")
+                if success_count > 0:
+                    st.success(f"🎉 完成! 成功處理 {success_count}/{len(selected_videos)} 部影片")
+                else:
+                    st.error(f"❌ 處理失敗，請檢查網路連線或稍後再試")
                 
                 with st.expander("📋 處理結果詳情"):
                     for r in results:
