@@ -221,17 +221,16 @@ if page == "📺 頻道擷取":
                                 }
                             )
                             
-                            # 生成 MD 檔案
+                            # 生成 MD 檔案 (純 MD，無 YAML frontmatter)
                             md_content = injector.create_markdown(
                                 content=transcript['text'],
                                 knowledge=knowledge.get('knowledge', ''),
-                                metadata_kwargs={
+                                video_info={
                                     'title': video['title'],
                                     'source': channel_url,
                                     'platform': 'youtube',
                                     'url': video['url'],
-                                    'keywords': knowledge.get('keywords', []),
-                                    'summary': knowledge.get('summary', '')
+                                    'duration': video.get('duration')
                                 }
                             )
                             
