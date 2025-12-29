@@ -110,17 +110,39 @@ with st.sidebar:
     
     # 狀態卡片
     st.markdown("### 📈 統計")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("已處理", st.session_state.processed_count)
-    with col2:
-        # 計算已處理檔案數
+    # 狀態卡片 (使用 empty container 以便動態更新)
+    sidebar_stats_container = st.empty()
+    
+    def update_sidebar_stats(total_override=None, today_override=None):
+        """動態更新側邊欄統計"""
         processed_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
-        if processed_dir.exists():
+        
+        # 如果有傳入數值則直接使用，否則讀取磁碟
+        if total_override is not None:
+            file_count = total_override
+        elif processed_dir.exists():
             file_count = len(list(processed_dir.glob("*.md")))
         else:
             file_count = 0
-        st.metric("檔案數", file_count)
+            
+        if today_override is not None:
+            today_count = today_override
+        else:
+            # 計算今日處理數
+            from datetime import date, datetime
+            today = date.today()
+            today_count = sum(1 for f in processed_dir.glob("*.md") 
+                            if f.stat().st_mtime > datetime.combine(today, datetime.min.time()).timestamp()) if processed_dir.exists() else 0
+
+        with sidebar_stats_container.container():
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("已處理", file_count)
+            with col2:
+                st.metric("今日", today_count)
+    
+    # 初始化顯示
+    update_sidebar_stats()
     
     st.divider()
     
@@ -195,32 +217,53 @@ if page == "📺 頻道擷取":
     if st.session_state.channel_videos:
         st.markdown("### 📹 影片列表")
         
-        # 定義 checkbox 變化處理函數
-        def toggle_video(idx):
-            """切換單一影片選取狀態"""
-            key = f"vid_{idx}"
-            if st.session_state.get(key, False):
-                st.session_state.selected_videos.add(idx)
-            else:
-                st.session_state.selected_videos.discard(idx)
+        # 定義 checkbox 變化處理函數 (已廢棄，改用直接狀態同步)
+        # def toggle_video(idx, version): ...
         
+        # 初始化 MetadataInjector 用於檢查已處理檔案
+        injector = MetadataInjector()
+        output_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
+
         # 全選/取消全選 (使用獨立計數器避免 key 衝突)
         if 'select_version' not in st.session_state:
             st.session_state.select_version = 0
         
-        col1, col2, col3 = st.columns([1, 1, 2])
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
         with col1:
-            if st.button("✅ 全選"):
-                st.session_state.selected_videos = set(range(len(st.session_state.channel_videos)))
+            if st.button("✅ 全選 (未處理)", help="僅選擇尚未下載/處理過的影片"):
+                # Smart Select: 僅選擇未處理的影片
+                new_selection = set()
+                for idx, video in enumerate(st.session_state.channel_videos):
+                    filename = injector.generate_safe_filename(video['title'])
+                    if not (output_dir / f"{filename}.md").exists():
+                        new_selection.add(idx)
+                
+                st.session_state.selected_videos = new_selection
                 st.session_state.select_version += 1  # 強制重新生成所有 checkbox
                 st.rerun()
         with col2:
-            if st.button("❌ 取消全選"):
-                st.session_state.selected_videos = set()
-                st.session_state.select_version += 1  # 強制重新生成所有 checkbox
+            if st.button("☑️ 強制全選", help="選擇列表中的所有影片（包含已處理）"):
+                st.session_state.selected_videos = set(range(len(st.session_state.channel_videos)))
+                st.session_state.select_version += 1
                 st.rerun()
         with col3:
-            st.info(f"已選擇 **{len(st.session_state.selected_videos)}** / {len(st.session_state.channel_videos)} 部影片")
+            if st.button("❌ 清除選擇"):
+                st.session_state.selected_videos = set()
+                st.session_state.select_version += 1
+                st.rerun()
+        with col4:
+            # 計算統計
+            total_selected = len(st.session_state.selected_videos)
+            processed_in_selection = 0
+            for idx in st.session_state.selected_videos:
+                if 0 <= idx < len(st.session_state.channel_videos):
+                    v = st.session_state.channel_videos[idx]
+                    fname = injector.generate_safe_filename(v['title'])
+                    if (output_dir / f"{fname}.md").exists():
+                        processed_in_selection += 1
+            
+            new_in_selection = total_selected - processed_in_selection
+            st.info(f"已選 **{total_selected}** 部 (🆕 {new_in_selection} / ✅ {processed_in_selection})")
         
         # 影片表格
         st.markdown("---")
@@ -269,16 +312,25 @@ if page == "📺 頻道擷取":
                     label_visibility="collapsed"
                 )
                 
-                # 處理狀態變化
-                if checked != is_selected:
-                    if checked:
-                        st.session_state.selected_videos.add(i)
-                    else:
-                        st.session_state.selected_videos.discard(i)
+                # 直接狀態同步：如果 Checkbox 狀態與 Set 不一致，立即更新並重跑
+                if checked and not is_selected:
+                    st.session_state.selected_videos.add(i)
+                    st.rerun()
+                elif not checked and is_selected:
+                    st.session_state.selected_videos.discard(i)
+                    st.rerun()
             
             with col2:
-                title = video['title'][:60] + "..." if len(video['title']) > 60 else video['title']
-                st.markdown(f"**{i+1}.** {title}")
+                # 檢查是否已處理
+                filename = injector.generate_safe_filename(video['title'])
+                is_processed = (output_dir / f"{filename}.md").exists()
+                
+                title_display = video['title'][:60] + "..." if len(video['title']) > 60 else video['title']
+                
+                if is_processed:
+                    st.markdown(f"**{i+1}.** {title_display} `✅ 已完成`")
+                else:
+                    st.markdown(f"**{i+1}.** {title_display}")
             
             with col3:
                 st.caption(video.get('duration_string', 'N/A'))
@@ -394,6 +446,7 @@ if page == "📺 頻道擷取":
                                 'skipped': True
                             })
                             st.session_state.processed_count += 1
+                            update_sidebar_stats()  # 即時更新側邊欄
                             continue  # 跳過已處理的影片
                         
                         try:
@@ -438,6 +491,7 @@ if page == "📺 頻道擷取":
                                     'source': transcript.get('source', 'unknown')
                                 })
                                 st.session_state.processed_count += 1
+                                update_sidebar_stats()  # 即時更新側邊欄
                             else:
                                 results.append({'video': video, 'success': False, 'error': '無法獲取字幕'})
                                 error_types['無法獲取字幕'] = error_types.get('無法獲取字幕', 0) + 1
