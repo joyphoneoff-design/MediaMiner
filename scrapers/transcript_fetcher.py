@@ -208,11 +208,12 @@ class TranscriptFetcher:
             
             client = Groq(api_key=api_key)
             
-            print("⏳ 使用 Groq Whisper API (免費, 超快)...")
+            # 使用 Turbo 版本 - 速度快 2-3 倍，品質接近 large-v3
+            print("⏳ 使用 Groq Whisper API (large-v3-turbo)...")
             with open(audio_file, "rb") as f:
                 transcription = client.audio.transcriptions.create(
                     file=(audio_file.name, f.read()),
-                    model="whisper-large-v3",
+                    model="whisper-large-v3-turbo",  # Turbo 版本更快
                     response_format="text"
                 )
             
@@ -220,7 +221,7 @@ class TranscriptFetcher:
                 'text': transcription,
                 'language': 'auto',
                 'source': 'groq-whisper',
-                'model': 'whisper-large-v3'
+                'model': 'whisper-large-v3-turbo'
             }
         except ImportError:
             print("groq package not installed. Run: pip install groq")

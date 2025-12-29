@@ -9,6 +9,10 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+# 載入環境變數
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")
+
 import streamlit as st
 
 # 添加專案路徑
@@ -293,18 +297,18 @@ if page == "📺 頻道擷取":
         # ========== 步驟 3: 開始處理 ==========
         st.markdown("### 🚀 開始下載處理")
         
-        # 處理設定
-        col1, col2, col3 = st.columns(3)
+        # 處理設定 - 第一行
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            batch_size = st.slider("批次大小", min_value=1, max_value=10, value=3, 
+            batch_size = st.slider("批次大小", min_value=1, max_value=10, value=5, 
                                    help="每批處理的影片數量")
         with col2:
             whisper_backend = st.selectbox(
                 "Whisper 後端",
-                options=["mlx", "groq", "openai"],
+                options=["groq", "mlx", "openai"],
                 format_func=lambda x: {
                     "mlx": "🖥️ MLX (本地 GPU)",
-                    "groq": "⚡ Groq API (免費快速)", 
+                    "groq": "⚡ Groq API (免費超快)", 
                     "openai": "🔷 OpenAI API (付費)"
                 }.get(x, x),
                 help="選擇語音辨識後端"
@@ -314,15 +318,23 @@ if page == "📺 頻道擷取":
                 whisper_model = st.selectbox(
                     "Whisper 模型",
                     options=["small", "medium", "base", "tiny"],
-                    help="small = 80/20 平衡, medium = 更準確但較慢"
+                    help="small = 80/20 平衡"
                 )
             else:
-                whisper_model = "large-v3"  # API 使用最佳模型
-                st.info(f"📌 使用 large-v3")
+                whisper_model = "large-v3-turbo"
+                st.info("📌 使用 turbo 模型")
+        with col4:
+            if whisper_backend in ["groq", "openai"]:
+                api_workers = st.slider("API 並行", min_value=1, max_value=5, value=3,
+                                       help="API 並行請求數 (建議 3)")
+            else:
+                api_workers = 1
+                st.caption("本地處理")
         
         # 保存設定到 session
         st.session_state.whisper_backend = whisper_backend
         st.session_state.whisper_model = whisper_model
+        st.session_state.api_workers = api_workers
         
         if st.button("🚀 開始下載字幕並處理", type="primary", 
                      disabled=len(st.session_state.selected_videos) == 0 or st.session_state.processing):
@@ -369,6 +381,21 @@ if page == "📺 頻道擷取":
                         progress = int((video_idx / len(selected_videos)) * 100)
                         progress_bar.progress(progress, text=f"處理: {video_idx}/{len(selected_videos)} - {video['title'][:30]}...")
                         
+                        # 檢查是否已處理過 (跳過重複)
+                        filename = injector.generate_safe_filename(video['title'])
+                        output_file = output_dir / f"{filename}.md"
+                        
+                        if output_file.exists():
+                            results.append({
+                                'video': video, 
+                                'success': True, 
+                                'file': str(output_file),
+                                'source': 'cached',
+                                'skipped': True
+                            })
+                            st.session_state.processed_count += 1
+                            continue  # 跳過已處理的影片
+                        
                         try:
                             # 獲取逐字稿 (使用選定的 Whisper 後端)
                             transcript = fetcher.fetch(
@@ -401,9 +428,7 @@ if page == "📺 頻道擷取":
                                     }
                                 )
                                 
-                                # 保存
-                                filename = injector.generate_safe_filename(video['title'])
-                                output_file = output_dir / f"{filename}.md"
+                                # 保存 (filename 和 output_file 已在前面定義)
                                 output_file.write_text(md_content, encoding='utf-8')
                                 
                                 results.append({
@@ -433,21 +458,24 @@ if page == "📺 頻道擷取":
                 # 計算執行統計
                 elapsed_time = time.time() - start_time
                 success_count = sum(1 for r in results if r['success'])
+                skipped_count = sum(1 for r in results if r.get('skipped'))
+                new_count = success_count - skipped_count
                 
                 progress_bar.progress(100, text="✅ 完成!")
                 
                 # 顯示統計指標
                 with metrics_placeholder.container():
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
                         st.metric("✅ 成功", success_count)
                     with col2:
-                        st.metric("❌ 失敗", len(results) - success_count)
+                        st.metric("🆕 新增", new_count)
                     with col3:
-                        st.metric("⏱️ 耗時", f"{elapsed_time:.1f}s")
+                        st.metric("⏭️ 跳過", skipped_count, help="已存在的檔案")
                     with col4:
-                        rate = success_count / elapsed_time if elapsed_time > 0 else 0
-                        st.metric("📊 速率", f"{rate:.2f}/s")
+                        st.metric("❌ 失敗", len(results) - success_count)
+                    with col5:
+                        st.metric("⏱️ 耗時", f"{elapsed_time:.1f}s")
                     
                     # 顯示錯誤分布
                     if error_types:
