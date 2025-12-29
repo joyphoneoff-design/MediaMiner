@@ -173,6 +173,8 @@ if page == "📺 頻道擷取":
         st.session_state.selected_videos = set()
     if 'fetch_complete' not in st.session_state:
         st.session_state.fetch_complete = False
+    if 'processing' not in st.session_state:
+        st.session_state.processing = False
     
     # 輸入區
     channel_url = st.text_input(
@@ -187,7 +189,7 @@ if page == "📺 頻道擷取":
     col1, col2 = st.columns([1, 3])
     
     with col1:
-        fetch_btn = st.button("📋 獲取影片列表", type="secondary", disabled=st.session_state.processing)
+        fetch_btn = st.button("📋 獲取影片列表", type="secondary")
     
     with col2:
         if st.session_state.fetch_complete:
