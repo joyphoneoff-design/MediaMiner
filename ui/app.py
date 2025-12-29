@@ -140,73 +140,196 @@ st.markdown('<p class="sub-header">一人公司創業者知識提取框架</p>',
 if page == "📺 頻道擷取":
     st.markdown("## 📺 頻道擷取")
     
+    # Session state for video list
+    if 'channel_videos' not in st.session_state:
+        st.session_state.channel_videos = []
+    if 'selected_videos' not in st.session_state:
+        st.session_state.selected_videos = set()
+    if 'fetch_complete' not in st.session_state:
+        st.session_state.fetch_complete = False
+    
     # 輸入區
-    col1, col2 = st.columns([3, 1])
+    col1, col2 = st.columns([4, 1])
     
     with col1:
         channel_url = st.text_input(
             "YouTube 頻道 URL",
-            placeholder="https://youtube.com/@dankoetalks",
-            help="輸入 YouTube 頻道 URL"
+            placeholder="https://youtube.com/@DanKoeTalks",
+            help="輸入 YouTube 頻道 URL (支援 @username 格式)"
         )
     
     with col2:
-        max_videos = st.number_input("影片數量", min_value=1, max_value=100, value=10)
+        fetch_all = st.checkbox("全部影片", value=False, help="勾選以獲取頻道所有影片")
     
     # 預設頻道
     st.markdown("#### 🔖 預設頻道")
     preset_channels = [
-        ("Dan Koe (YouTube)", "https://youtube.com/@dankoetalks"),
+        ("Dan Koe", "https://youtube.com/@DanKoeTalks"),
+        ("Ali Abdaal", "https://youtube.com/@aliabdaal"),
     ]
     
-    col1, col2 = st.columns(2)
+    cols = st.columns(len(preset_channels))
     for i, (name, url) in enumerate(preset_channels):
-        with [col1, col2][i % 2]:
+        with cols[i]:
             if st.button(f"📌 {name}", key=f"preset_{i}"):
-                channel_url = url
+                st.session_state.channel_url_input = url
+                st.rerun()
     
-    with st.expander("⚠️ 小紅書限制說明"):
-        st.markdown("""
-        小紅書有反爬機制，目前支援有限：
-        - ❌ 用戶主頁連結無法直接爬取
-        - ⚠️ 需要具體筆記連結 (`/explore/xxx`)
-        - 💡 建議：手動複製筆記連結
-        """)
+    # 獲取頻道 URL
+    if 'channel_url_input' in st.session_state:
+        channel_url = st.session_state.channel_url_input
     
     st.divider()
     
-    # 處理按鈕
-    if st.button("🚀 開始擷取", type="primary", disabled=st.session_state.processing):
-        if channel_url:
+    # ========== 步驟 1: 獲取影片列表 ==========
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        fetch_btn = st.button("📋 獲取影片列表", type="secondary", disabled=st.session_state.processing)
+    
+    with col2:
+        if st.session_state.fetch_complete:
+            st.success(f"✅ 已載入 {len(st.session_state.channel_videos)} 部影片")
+    
+    if fetch_btn and channel_url:
+        st.session_state.processing = True
+        st.session_state.fetch_complete = False
+        
+        with st.spinner("🔍 正在獲取頻道影片列表..."):
+            scraper = YouTubeScraper()
+            max_vids = 0 if fetch_all else 100  # 0 = all
+            videos = scraper.get_channel_videos(channel_url, max_vids)
+            
+            if videos:
+                st.session_state.channel_videos = videos
+                st.session_state.selected_videos = set(range(len(videos)))  # 預設全選
+                st.session_state.fetch_complete = True
+                st.success(f"✅ 找到 {len(videos)} 部影片")
+            else:
+                st.error("❌ 無法獲取影片列表，請確認 URL 格式正確")
+        
+        st.session_state.processing = False
+        st.rerun()
+    
+    # ========== 步驟 2: 顯示影片列表與選擇 ==========
+    if st.session_state.channel_videos:
+        st.markdown("### 📹 影片列表")
+        
+        # 全選/取消全選
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("✅ 全選"):
+                st.session_state.selected_videos = set(range(len(st.session_state.channel_videos)))
+                st.rerun()
+        with col2:
+            if st.button("❌ 取消全選"):
+                st.session_state.selected_videos = set()
+                st.rerun()
+        with col3:
+            st.info(f"已選擇 **{len(st.session_state.selected_videos)}** / {len(st.session_state.channel_videos)} 部影片")
+        
+        # 影片表格
+        st.markdown("---")
+        
+        # 分頁顯示 (每頁 20 個)
+        videos = st.session_state.channel_videos
+        page_size = 20
+        total_pages = (len(videos) - 1) // page_size + 1
+        
+        if 'video_page' not in st.session_state:
+            st.session_state.video_page = 0
+        
+        # 分頁控制
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col1:
+            if st.button("⬅️ 上一頁", disabled=st.session_state.video_page == 0):
+                st.session_state.video_page -= 1
+                st.rerun()
+        with col2:
+            st.markdown(f"<center>第 {st.session_state.video_page + 1} / {total_pages} 頁</center>", unsafe_allow_html=True)
+        with col3:
+            if st.button("➡️ 下一頁", disabled=st.session_state.video_page >= total_pages - 1):
+                st.session_state.video_page += 1
+                st.rerun()
+        
+        # 顯示當前頁的影片
+        start_idx = st.session_state.video_page * page_size
+        end_idx = min(start_idx + page_size, len(videos))
+        
+        for i in range(start_idx, end_idx):
+            video = videos[i]
+            col1, col2, col3, col4 = st.columns([0.5, 4, 1, 1])
+            
+            with col1:
+                checked = st.checkbox(
+                    "", 
+                    value=i in st.session_state.selected_videos,
+                    key=f"vid_{i}",
+                    label_visibility="collapsed"
+                )
+                if checked and i not in st.session_state.selected_videos:
+                    st.session_state.selected_videos.add(i)
+                elif not checked and i in st.session_state.selected_videos:
+                    st.session_state.selected_videos.discard(i)
+            
+            with col2:
+                title = video['title'][:60] + "..." if len(video['title']) > 60 else video['title']
+                st.markdown(f"**{i+1}.** {title}")
+            
+            with col3:
+                st.caption(video.get('duration_string', 'N/A'))
+            
+            with col4:
+                views = video.get('view_count', 0)
+                if views >= 1000000:
+                    st.caption(f"{views/1000000:.1f}M 👁")
+                elif views >= 1000:
+                    st.caption(f"{views/1000:.0f}K 👁")
+                else:
+                    st.caption(f"{views} 👁")
+        
+        st.divider()
+        
+        # ========== 步驟 3: 開始處理 ==========
+        st.markdown("### 🚀 開始下載處理")
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            concurrent_workers = st.slider("並行處理數", min_value=1, max_value=8, value=4, 
+                                           help="根據網路性能調整")
+        
+        if st.button("🚀 開始下載字幕並處理", type="primary", 
+                     disabled=len(st.session_state.selected_videos) == 0 or st.session_state.processing):
+            
             st.session_state.processing = True
+            selected_indices = sorted(st.session_state.selected_videos)
+            selected_videos = [st.session_state.channel_videos[i] for i in selected_indices]
+            
+            st.info(f"🎬 準備處理 {len(selected_videos)} 部影片 (並行數: {concurrent_workers})")
             
             progress_bar = st.progress(0, text="初始化...")
             status_container = st.empty()
+            results_container = st.container()
             
             try:
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                import threading
+                
                 # 初始化元件
-                scraper = YouTubeScraper()
                 fetcher = TranscriptFetcher()
                 extractor = KnowledgeExtractor()
                 injector = MetadataInjector()
                 
-                # 1. 獲取影片列表
-                progress_bar.progress(10, text="獲取影片列表...")
-                videos = scraper.get_channel_videos(channel_url, max_videos)
+                output_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
+                output_dir.mkdir(parents=True, exist_ok=True)
                 
-                if not videos:
-                    st.error("❌ 無法獲取影片列表")
-                    st.session_state.processing = False
-                else:
-                    st.session_state.videos = videos
-                    status_container.info(f"📹 找到 {len(videos)} 部影片")
-                    
-                    # 2. 處理每部影片
-                    results = []
-                    for i, video in enumerate(videos):
-                        progress = int(10 + (i / len(videos)) * 80)
-                        progress_bar.progress(progress, text=f"處理: {video['title'][:40]}...")
-                        
+                results = []
+                lock = threading.Lock()
+                completed = [0]  # 使用 list 讓 closure 可修改
+                
+                def process_video(video):
+                    """處理單一影片"""
+                    try:
                         # 獲取逐字稿
                         transcript = fetcher.fetch(video['url'])
                         
@@ -216,65 +339,68 @@ if page == "📺 頻道擷取":
                                 transcript['text'],
                                 video_info={
                                     'title': video['title'],
-                                    'channel': channel_url,
+                                    'channel': video.get('channel', ''),
                                     'duration': video.get('duration')
                                 }
                             )
                             
-                            # 生成 MD 檔案 (純 MD，無 YAML frontmatter)
+                            # 生成 MD
                             md_content = injector.create_markdown(
                                 content=transcript['text'],
                                 knowledge=knowledge.get('knowledge', ''),
                                 video_info={
                                     'title': video['title'],
-                                    'source': channel_url,
+                                    'source': video.get('channel', ''),
                                     'platform': 'youtube',
                                     'url': video['url'],
                                     'duration': video.get('duration')
                                 }
                             )
                             
-                            # 保存檔案
-                            output_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
-                            output_dir.mkdir(parents=True, exist_ok=True)
-                            
+                            # 保存
                             filename = injector.generate_safe_filename(video['title'])
                             output_file = output_dir / f"{filename}.md"
                             output_file.write_text(md_content, encoding='utf-8')
                             
-                            results.append({
-                                'video': video,
-                                'success': True,
-                                'file': str(output_file)
-                            })
-                            st.session_state.processed_count += 1
+                            return {'video': video, 'success': True, 'file': str(output_file)}
                         else:
-                            results.append({
-                                'video': video,
-                                'success': False,
-                                'error': '無法獲取逐字稿'
-                            })
+                            return {'video': video, 'success': False, 'error': '無法獲取字幕'}
                     
-                    progress_bar.progress(100, text="完成!")
+                    except Exception as e:
+                        return {'video': video, 'success': False, 'error': str(e)}
+                
+                # 多線程處理
+                with ThreadPoolExecutor(max_workers=concurrent_workers) as executor:
+                    futures = {executor.submit(process_video, v): v for v in selected_videos}
                     
-                    # 顯示結果
-                    success_count = sum(1 for r in results if r['success'])
-                    st.success(f"✅ 完成! 成功處理 {success_count}/{len(videos)} 部影片")
-                    
-                    # 結果表格
-                    with st.expander("📋 處理結果"):
-                        for r in results:
-                            if r['success']:
-                                st.markdown(f"✅ **{r['video']['title'][:50]}...**")
-                            else:
-                                st.markdown(f"❌ **{r['video']['title'][:50]}...** - {r.get('error', '')}")
-                    
+                    for future in as_completed(futures):
+                        result = future.result()
+                        results.append(result)
+                        
+                        with lock:
+                            completed[0] += 1
+                            progress = int((completed[0] / len(selected_videos)) * 100)
+                            progress_bar.progress(progress, 
+                                text=f"處理中: {completed[0]}/{len(selected_videos)} - {result['video']['title'][:30]}...")
+                            st.session_state.processed_count += 1 if result['success'] else 0
+                
+                progress_bar.progress(100, text="✅ 完成!")
+                
+                # 顯示結果
+                success_count = sum(1 for r in results if r['success'])
+                st.success(f"🎉 完成! 成功處理 {success_count}/{len(selected_videos)} 部影片")
+                
+                with st.expander("📋 處理結果詳情"):
+                    for r in results:
+                        if r['success']:
+                            st.markdown(f"✅ **{r['video']['title'][:50]}...**")
+                        else:
+                            st.markdown(f"❌ **{r['video']['title'][:50]}...** - {r.get('error', '')}")
+                
             except Exception as e:
                 st.error(f"❌ 錯誤: {str(e)}")
             finally:
                 st.session_state.processing = False
-        else:
-            st.warning("⚠️ 請輸入頻道 URL")
 
 # 處理狀態頁面
 elif page == "📊 處理狀態":

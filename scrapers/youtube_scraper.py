@@ -25,18 +25,28 @@ class YouTubeScraper:
         
         Args:
             channel_url: YouTube 頻道 URL
-            max_videos: 最大影片數量
+            max_videos: 最大影片數量 (0 = 全部)
             
         Returns:
-            影片列表 [{'id': ..., 'title': ..., 'url': ...}, ...]
+            影片列表 [{'id': ..., 'title': ..., 'url': ..., 'description': ...}, ...]
         """
+        # 確保 URL 指向 /videos 頁面
+        if not channel_url.endswith('/videos'):
+            channel_url = channel_url.rstrip('/') + '/videos'
+        
         cmd = [
             "yt-dlp",
+            "--cookies-from-browser", "chrome",
+            "--extractor-args", "youtubetab:skip=authcheck",
             "--flat-playlist",
             "--dump-json",
-            "--playlist-end", str(max_videos),
-            channel_url
         ]
+        
+        # 如果 max_videos > 0，限制數量
+        if max_videos > 0:
+            cmd.extend(["--playlist-end", str(max_videos)])
+        
+        cmd.append(channel_url)
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -49,7 +59,11 @@ class YouTubeScraper:
                         'title': video.get('title'),
                         'url': f"https://www.youtube.com/watch?v={video.get('id')}",
                         'duration': video.get('duration'),
-                        'upload_date': video.get('upload_date')
+                        'duration_string': video.get('duration_string', ''),
+                        'upload_date': video.get('upload_date'),
+                        'description': video.get('description', '')[:200],
+                        'view_count': video.get('view_count', 0),
+                        'channel': video.get('playlist_uploader', ''),
                     })
             return videos
         except subprocess.CalledProcessError as e:
