@@ -194,7 +194,7 @@ class KnowledgeExtractor:
 
 
 if __name__ == "__main__":
-    print("🧠 Crawl_R2R Knowledge Extractor")
+    print("🧠 MediaMiner Knowledge Extractor")
     print("=" * 50)
     
     extractor = KnowledgeExtractor()

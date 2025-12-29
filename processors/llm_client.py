@@ -218,7 +218,7 @@ def get_llm_client() -> LLMClient:
 
 
 if __name__ == "__main__":
-    print("🤖 Crawl_R2R LLM Client")
+    print("🤖 MediaMiner LLM Client")
     print("=" * 50)
     
     client = get_llm_client()

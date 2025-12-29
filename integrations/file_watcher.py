@@ -65,7 +65,7 @@ class FileWatcher:
     """檔案監控服務"""
     
     def __init__(self, 
-                 watch_dir: str = "~/Documents/Crawl_R2R_Data/processed",
+                 watch_dir: str = "~/Documents/MediaMiner_Data/processed",
                  collection_name: str = "crawl_r2r_dev"):
         self.watch_dir = Path(watch_dir).expanduser()
         self.watch_dir.mkdir(parents=True, exist_ok=True)
@@ -117,7 +117,7 @@ class FileWatcher:
 
 
 if __name__ == "__main__":
-    print("👁️ Crawl_R2R File Watcher")
+    print("👁️ MediaMiner File Watcher")
     print("=" * 50)
     
     watcher = FileWatcher()

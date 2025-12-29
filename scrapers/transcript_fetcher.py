@@ -23,7 +23,7 @@ class TranscriptFetcher:
     
     SUBTITLE_LANGS = ["zh-TW", "zh-Hant", "zh-CN", "zh-Hans", "zh", "en"]
     
-    def __init__(self, output_dir: str = "~/Documents/Crawl_R2R_Data/raw"):
+    def __init__(self, output_dir: str = "~/Documents/MediaMiner_Data/raw"):
         self.output_dir = Path(output_dir).expanduser()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -277,6 +277,6 @@ if __name__ == "__main__":
     # 測試
     test_url = "https://www.youtube.com/watch?v=example"
     
-    print("🎬 Crawl_R2R Transcript Fetcher")
+    print("🎬 MediaMiner Transcript Fetcher")
     print("=" * 50)
     print(f"Output dir: {fetcher.output_dir}")

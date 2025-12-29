@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Crawl_R2R Streamlit UI
+MediaMiner Streamlit UI
 社交媒體知識提取系統介面
 """
 
@@ -24,7 +24,7 @@ from integrations.r2r_connector import R2RConnector
 # 頁面配置
 # ===========================================
 st.set_page_config(
-    page_title="Crawl_R2R - 創業者知識庫",
+    page_title="MediaMiner - 創業者知識庫",
     page_icon="🎯",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -90,7 +90,7 @@ if 'processing' not in st.session_state:
 # 側邊欄
 # ===========================================
 with st.sidebar:
-    st.markdown("### 🎯 Crawl_R2R")
+    st.markdown("### 🎯 MediaMiner")
     st.markdown("**社交媒體知識提取系統**")
     
     st.divider()
@@ -111,7 +111,7 @@ with st.sidebar:
         st.metric("已處理", st.session_state.processed_count)
     with col2:
         # 計算已處理檔案數
-        processed_dir = Path.home() / "Documents" / "Crawl_R2R_Data" / "processed"
+        processed_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
         if processed_dir.exists():
             file_count = len(list(processed_dir.glob("*.md")))
         else:
@@ -133,7 +133,7 @@ with st.sidebar:
 # ===========================================
 
 # 頁面標題
-st.markdown('<h1 class="main-header">🎯 Crawl_R2R</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">🎯 MediaMiner</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">一人公司創業者知識提取框架</p>', unsafe_allow_html=True)
 
 # 頻道擷取頁面
@@ -235,7 +235,7 @@ if page == "📺 頻道擷取":
                             )
                             
                             # 保存檔案
-                            output_dir = Path.home() / "Documents" / "Crawl_R2R_Data" / "processed"
+                            output_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
                             output_dir.mkdir(parents=True, exist_ok=True)
                             
                             filename = injector.generate_safe_filename(video['title'])
@@ -281,7 +281,7 @@ elif page == "📊 處理狀態":
     st.markdown("## 📊 處理狀態")
     
     # 目錄統計
-    data_dir = Path.home() / "Documents" / "Crawl_R2R_Data"
+    data_dir = Path.home() / "Documents" / "MediaMiner_Data"
     
     col1, col2, col3 = st.columns(3)
     
@@ -331,7 +331,7 @@ elif page == "🔍 知識問答":
             if query:
                 with st.spinner("搜索中..."):
                     # 本地檔案搜索
-                    knowledge_dir = Path.home() / "Documents" / "Crawl_R2R_Data" / "knowledge"
+                    knowledge_dir = Path.home() / "Documents" / "MediaMiner_Data" / "knowledge"
                     results = []
                     
                     if knowledge_dir.exists():
@@ -360,7 +360,7 @@ elif page == "🔍 知識問答":
                         from processors.llm_client import get_llm_client
                         
                         # 讀取所有知識卡片作為上下文
-                        knowledge_dir = Path.home() / "Documents" / "Crawl_R2R_Data" / "knowledge"
+                        knowledge_dir = Path.home() / "Documents" / "MediaMiner_Data" / "knowledge"
                         context = ""
                         if knowledge_dir.exists():
                             for f in list(knowledge_dir.glob("*.md"))[:5]:
@@ -444,6 +444,6 @@ elif page == "⚙️ 設定":
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #888; font-size: 0.9rem;">
-    Crawl_R2R v1.0 | 一人公司創業者知識提取框架
+    MediaMiner v1.0 | 一人公司創業者知識提取框架
 </div>
 """, unsafe_allow_html=True)

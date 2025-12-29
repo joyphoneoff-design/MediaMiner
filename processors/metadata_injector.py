@@ -2,7 +2,7 @@
 """
 Markdown 輸出器 (簡化版)
 輸出純 MD 格式，不含 YAML frontmatter
-Metadata 和繁簡轉換由 rag_data_washer 處理
+Metadata 和繁簡轉換由 MetaEnricher 處理
 """
 
 import re
@@ -101,7 +101,7 @@ MetadataInjector = MarkdownFormatter
 
 
 if __name__ == "__main__":
-    print("📝 Crawl_R2R Markdown Formatter (v2)")
+    print("📝 MediaMiner Markdown Formatter (v2)")
     print("=" * 50)
     
     formatter = MarkdownFormatter()

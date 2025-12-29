@@ -1,4 +1,4 @@
-# Crawl_R2R 🎯
+# MediaMiner 🎯
 
 > 一人公司創業者社交媒體知識提取框架
 
@@ -14,7 +14,7 @@
 
 ```bash
 # 1. 進入專案目錄
-cd ~/Crawl_R2R
+cd ~/MediaMiner
 
 # 2. 設定執行權限
 chmod +x run.sh
@@ -28,7 +28,7 @@ Web UI: http://localhost:8502
 ## 📁 專案結構
 
 ```
-Crawl_R2R/
+MediaMiner/
 ├── config/
 │   ├── config.yaml        # 主配置
 │   ├── api_keys.env       # API 密鑰

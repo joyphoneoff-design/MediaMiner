@@ -238,7 +238,7 @@ class R2RConnector:
 
 
 if __name__ == "__main__":
-    print("🔗 Crawl_R2R R2R Connector")
+    print("🔗 MediaMiner R2R Connector")
     print("=" * 50)
     
     connector = R2RConnector()

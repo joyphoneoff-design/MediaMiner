@@ -2,3 +2,9 @@ config/api_keys.env
 *.env
 __pycache__/
 .DS_Store
+
+# Virtual environments
+.venv/
+venv/
+*.pyc
+.deps_installed

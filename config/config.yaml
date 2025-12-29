@@ -1,4 +1,4 @@
-# Crawl_R2R Configuration
+# MediaMiner Configuration
 # 社交媒體知識提取系統配置
 
 # ===========================================
@@ -76,10 +76,10 @@ r2r:
 # 資料目錄
 # ===========================================
 directories:
-  data_root: "~/Documents/Crawl_R2R_Data"
-  raw: "~/Documents/Crawl_R2R_Data/raw"
-  processed: "~/Documents/Crawl_R2R_Data/processed"
-  knowledge: "~/Documents/Crawl_R2R_Data/knowledge"
+  data_root: "~/Documents/MediaMiner_Data"
+  raw: "~/Documents/MediaMiner_Data/raw"
+  processed: "~/Documents/MediaMiner_Data/processed"
+  knowledge: "~/Documents/MediaMiner_Data/knowledge"
 
 # ===========================================
 # 語音辨識配置

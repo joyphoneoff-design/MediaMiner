@@ -15,7 +15,7 @@ import re
 class YouTubeScraper:
     """YouTube 頻道爬蟲類"""
     
-    def __init__(self, output_dir: str = "~/Documents/Crawl_R2R_Data/raw"):
+    def __init__(self, output_dir: str = "~/Documents/MediaMiner_Data/raw"):
         self.output_dir = Path(output_dir).expanduser()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -180,7 +180,7 @@ if __name__ == "__main__":
     # 測試頻道
     test_channel = "https://youtube.com/@dankoetalks"
     
-    print("🚀 Crawl_R2R YouTube Scraper")
+    print("🚀 MediaMiner YouTube Scraper")
     print("=" * 50)
     
     # 獲取影片列表 (先測試 5 部)

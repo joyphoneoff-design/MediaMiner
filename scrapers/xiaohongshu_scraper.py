@@ -16,7 +16,7 @@ from urllib.parse import urlparse, parse_qs
 class XiaohongshuScraper:
     """小紅書爬蟲類"""
     
-    def __init__(self, output_dir: str = "~/Documents/Crawl_R2R_Data/raw"):
+    def __init__(self, output_dir: str = "~/Documents/MediaMiner_Data/raw"):
         self.output_dir = Path(output_dir).expanduser()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
