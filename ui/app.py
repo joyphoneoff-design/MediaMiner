@@ -149,35 +149,11 @@ if page == "📺 頻道擷取":
         st.session_state.fetch_complete = False
     
     # 輸入區
-    col1, col2 = st.columns([4, 1])
-    
-    with col1:
-        channel_url = st.text_input(
-            "YouTube 頻道 URL",
-            placeholder="https://youtube.com/@DanKoeTalks",
-            help="輸入 YouTube 頻道 URL (支援 @username 格式)"
-        )
-    
-    with col2:
-        fetch_all = st.checkbox("全部影片", value=False, help="勾選以獲取頻道所有影片")
-    
-    # 預設頻道
-    st.markdown("#### 🔖 預設頻道")
-    preset_channels = [
-        ("Dan Koe", "https://youtube.com/@DanKoeTalks"),
-        ("Ali Abdaal", "https://youtube.com/@aliabdaal"),
-    ]
-    
-    cols = st.columns(len(preset_channels))
-    for i, (name, url) in enumerate(preset_channels):
-        with cols[i]:
-            if st.button(f"📌 {name}", key=f"preset_{i}"):
-                st.session_state.channel_url_input = url
-                st.rerun()
-    
-    # 獲取頻道 URL
-    if 'channel_url_input' in st.session_state:
-        channel_url = st.session_state.channel_url_input
+    channel_url = st.text_input(
+        "YouTube 頻道 URL",
+        placeholder="https://youtube.com/@DanKoeTalks",
+        help="輸入 YouTube 頻道 URL (支援 @username 格式)"
+    )
     
     st.divider()
     
@@ -197,7 +173,7 @@ if page == "📺 頻道擷取":
         
         with st.spinner("🔍 正在獲取頻道影片列表..."):
             scraper = YouTubeScraper()
-            max_vids = 0 if fetch_all else 100  # 0 = all
+            max_vids = 0  # 0 = 獲取全部影片
             videos = scraper.get_channel_videos(channel_url, max_vids)
             
             if videos:
@@ -220,10 +196,18 @@ if page == "📺 頻道擷取":
         with col1:
             if st.button("✅ 全選"):
                 st.session_state.selected_videos = set(range(len(st.session_state.channel_videos)))
+                # 清除所有 checkbox 的緩存狀態
+                for key in list(st.session_state.keys()):
+                    if key.startswith("vid_"):
+                        del st.session_state[key]
                 st.rerun()
         with col2:
             if st.button("❌ 取消全選"):
                 st.session_state.selected_videos = set()
+                # 清除所有 checkbox 的緩存狀態
+                for key in list(st.session_state.keys()):
+                    if key.startswith("vid_"):
+                        del st.session_state[key]
                 st.rerun()
         with col3:
             st.info(f"已選擇 **{len(st.session_state.selected_videos)}** / {len(st.session_state.channel_videos)} 部影片")
@@ -231,9 +215,9 @@ if page == "📺 頻道擷取":
         # 影片表格
         st.markdown("---")
         
-        # 分頁顯示 (每頁 20 個)
+        # 分頁顯示 (每頁 50 個)
         videos = st.session_state.channel_videos
-        page_size = 20
+        page_size = 50
         total_pages = (len(videos) - 1) // page_size + 1
         
         if 'video_page' not in st.session_state:
