@@ -293,13 +293,36 @@ if page == "📺 頻道擷取":
         # ========== 步驟 3: 開始處理 ==========
         st.markdown("### 🚀 開始下載處理")
         
-        # 使用批次處理而非多線程以避免記憶體問題
-        col1, col2 = st.columns(2)
+        # 處理設定
+        col1, col2, col3 = st.columns(3)
         with col1:
             batch_size = st.slider("批次大小", min_value=1, max_value=10, value=3, 
-                                   help="每批處理的影片數量，較小值可減少記憶體使用")
+                                   help="每批處理的影片數量")
         with col2:
-            st.caption("💡 **建議**: 批次大小 3-5 較為穩定。過大可能導致記憶體不足。")
+            whisper_backend = st.selectbox(
+                "Whisper 後端",
+                options=["mlx", "groq", "openai"],
+                format_func=lambda x: {
+                    "mlx": "🖥️ MLX (本地 GPU)",
+                    "groq": "⚡ Groq API (免費快速)", 
+                    "openai": "🔷 OpenAI API (付費)"
+                }.get(x, x),
+                help="選擇語音辨識後端"
+            )
+        with col3:
+            if whisper_backend == "mlx":
+                whisper_model = st.selectbox(
+                    "Whisper 模型",
+                    options=["small", "medium", "base", "tiny"],
+                    help="small = 80/20 平衡, medium = 更準確但較慢"
+                )
+            else:
+                whisper_model = "large-v3"  # API 使用最佳模型
+                st.info(f"📌 使用 large-v3")
+        
+        # 保存設定到 session
+        st.session_state.whisper_backend = whisper_backend
+        st.session_state.whisper_model = whisper_model
         
         if st.button("🚀 開始下載字幕並處理", type="primary", 
                      disabled=len(st.session_state.selected_videos) == 0 or st.session_state.processing):
@@ -347,8 +370,12 @@ if page == "📺 頻道擷取":
                         progress_bar.progress(progress, text=f"處理: {video_idx}/{len(selected_videos)} - {video['title'][:30]}...")
                         
                         try:
-                            # 獲取逐字稿
-                            transcript = fetcher.fetch(video['url'])
+                            # 獲取逐字稿 (使用選定的 Whisper 後端)
+                            transcript = fetcher.fetch(
+                                video['url'],
+                                whisper_backend=st.session_state.get('whisper_backend', 'mlx'),
+                                whisper_model=st.session_state.get('whisper_model', 'small')
+                            )
                             
                             if transcript:
                                 # 提取知識

@@ -120,14 +120,17 @@ class TranscriptFetcher:
         
         return None
     
-    def fetch_with_whisper(self, video_url: str, model: str = "small") -> Optional[Dict]:
+    def fetch_with_whisper(self, video_url: str, model: str = "small", backend: str = "mlx") -> Optional[Dict]:
         """
-        使用 MLX-Whisper 進行語音辨識 (Apple Silicon GPU 加速)
+        使用 Whisper 進行語音辨識
         
         Args:
             video_url: 影片 URL
             model: Whisper 模型 (tiny/base/small/medium/large-v3)
-                   80/20 推薦: small (速度與品質平衡)
+            backend: 
+                - "mlx": Apple Silicon GPU 加速 (本地)
+                - "groq": Groq API (免費, 超快)
+                - "openai": OpenAI API (付費, 最準確)
             
         Returns:
             {'text': ..., 'language': ..., 'source': 'whisper'}
@@ -161,7 +164,6 @@ class TranscriptFetcher:
             return None
         
         if not audio_file.exists():
-            # yt-dlp 可能會加上不同副檔名
             for ext in ['.mp3', '.m4a', '.webm', '.opus']:
                 alt_file = temp_dir / f"audio{ext}"
                 if alt_file.exists():
@@ -172,7 +174,93 @@ class TranscriptFetcher:
             print("Audio file not found")
             return None
         
-        # 使用 MLX-Whisper (Apple Silicon GPU 加速)
+        result = None
+        
+        # === Backend: Groq API (免費, 超快) ===
+        if backend == "groq":
+            result = self._whisper_groq(audio_file)
+        
+        # === Backend: OpenAI API (付費, 最準確) ===
+        elif backend == "openai":
+            result = self._whisper_openai(audio_file)
+        
+        # === Backend: MLX (本地 GPU 加速) ===
+        elif backend == "mlx":
+            result = self._whisper_mlx(audio_file, model)
+        
+        # 清理暫存檔
+        try:
+            audio_file.unlink()
+        except:
+            pass
+        
+        return result
+    
+    def _whisper_groq(self, audio_file: Path) -> Optional[Dict]:
+        """使用 Groq Whisper API (免費, 超快)"""
+        try:
+            from groq import Groq
+            
+            api_key = os.environ.get("GROQ_API_KEY")
+            if not api_key:
+                print("⚠️ GROQ_API_KEY 未設置")
+                return None
+            
+            client = Groq(api_key=api_key)
+            
+            print("⏳ 使用 Groq Whisper API (免費, 超快)...")
+            with open(audio_file, "rb") as f:
+                transcription = client.audio.transcriptions.create(
+                    file=(audio_file.name, f.read()),
+                    model="whisper-large-v3",
+                    response_format="text"
+                )
+            
+            return {
+                'text': transcription,
+                'language': 'auto',
+                'source': 'groq-whisper',
+                'model': 'whisper-large-v3'
+            }
+        except ImportError:
+            print("groq package not installed. Run: pip install groq")
+        except Exception as e:
+            print(f"Groq Whisper error: {e}")
+        return None
+    
+    def _whisper_openai(self, audio_file: Path) -> Optional[Dict]:
+        """使用 OpenAI Whisper API (付費, 最準確)"""
+        try:
+            from openai import OpenAI
+            
+            api_key = os.environ.get("OPENAI_API_KEY")
+            if not api_key:
+                print("⚠️ OPENAI_API_KEY 未設置")
+                return None
+            
+            client = OpenAI(api_key=api_key)
+            
+            print("⏳ 使用 OpenAI Whisper API...")
+            with open(audio_file, "rb") as f:
+                transcription = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=f
+                )
+            
+            return {
+                'text': transcription.text,
+                'language': 'auto',
+                'source': 'openai-whisper',
+                'model': 'whisper-1'
+            }
+        except ImportError:
+            print("openai package not installed. Run: pip install openai")
+        except Exception as e:
+            print(f"OpenAI Whisper error: {e}")
+        return None
+    
+    def _whisper_mlx(self, audio_file: Path, model: str = "small") -> Optional[Dict]:
+        """使用 MLX-Whisper (Apple Silicon GPU 加速)"""
         try:
             import mlx_whisper
             
@@ -185,12 +273,6 @@ class TranscriptFetcher:
             text = result.get("text", "")
             language = result.get("language", "auto")
             
-            # 清理暫存檔
-            try:
-                audio_file.unlink()
-            except:
-                pass
-            
             if text:
                 return {
                     'text': text,
@@ -201,19 +283,18 @@ class TranscriptFetcher:
                 
         except ImportError:
             print("MLX-Whisper not installed, falling back to CLI whisper")
-            # Fallback to CLI whisper
             try:
                 cmd = [
                     "whisper",
                     str(audio_file),
                     "--model", model,
                     "--output_format", "txt",
-                    "--output_dir", str(temp_dir)
+                    "--output_dir", str(audio_file.parent)
                 ]
                 
                 subprocess.run(cmd, capture_output=True, check=True, timeout=600)
                 
-                txt_file = temp_dir / "audio.txt"
+                txt_file = audio_file.parent / "audio.txt"
                 if txt_file.exists():
                     text = txt_file.read_text(encoding='utf-8')
                     return {
@@ -230,7 +311,8 @@ class TranscriptFetcher:
         
         return None
     
-    def fetch(self, video_url: str, use_whisper_fallback: bool = True) -> Optional[Dict]:
+    def fetch(self, video_url: str, use_whisper_fallback: bool = True, 
+              whisper_backend: str = "mlx", whisper_model: str = "small") -> Optional[Dict]:
         """
         智能擷取逐字稿
         優先順序: YouTube API → yt-dlp → Whisper
@@ -238,6 +320,8 @@ class TranscriptFetcher:
         Args:
             video_url: 影片 URL
             use_whisper_fallback: 是否使用 Whisper 備用
+            whisper_backend: Whisper 後端 (mlx/groq/openai)
+            whisper_model: Whisper 模型 (僅 mlx 使用)
             
         Returns:
             逐字稿資訊
@@ -260,10 +344,10 @@ class TranscriptFetcher:
         
         # 3. Whisper 備用
         if use_whisper_fallback:
-            print("⏳ 字幕不可用，使用 Whisper 進行語音辨識...")
-            result = self.fetch_with_whisper(video_url)
+            print(f"⏳ 字幕不可用，使用 Whisper ({whisper_backend}) 進行語音辨識...")
+            result = self.fetch_with_whisper(video_url, model=whisper_model, backend=whisper_backend)
             if result:
-                print(f"✅ 使用 Whisper 完成語音辨識")
+                print(f"✅ 使用 {result.get('source', 'Whisper')} 完成語音辨識")
                 return result
         
         print("❌ 無法獲取逐字稿")
