@@ -707,6 +707,7 @@ elif page == "📱 小紅書":
             output_dir.mkdir(parents=True, exist_ok=True)
             
             progress_bar = st.progress(0, text="準備中...")
+            status_placeholder = st.empty()  # 詳細狀態顯示
             metrics_placeholder = st.empty()
             
             results = []
@@ -722,16 +723,27 @@ elif page == "📱 小紅書":
                 if xhs_auto_cleanup == "保留3天":
                     fetcher.cleanup_temp_files(max_age_days=3)
                 
+                # 用於顯示當前狀態的變數
+                current_status = {"msg": "準備中..."}
+                
                 # === 單筆處理函數 ===
-                def process_single_note(note):
+                def process_single_note(note, note_idx=0, total=1):
                     try:
+                        # 進度回調函數
+                        def on_progress(msg):
+                            current_status["msg"] = f"[{note_idx+1}/{total}] {note['title'][:15]}... | {msg}"
+                        
+                        on_progress("📥 開始處理...")
+                        
                         transcript = fetcher.fetch(
                             note['url'],
                             whisper_backend=xhs_whisper_backend,
-                            whisper_model='large-v3-turbo'
+                            whisper_model='large-v3-turbo',
+                            progress_callback=on_progress
                         )
                         
                         if transcript:
+                            on_progress("📝 知識提取中...")
                             knowledge_result = extractor.process_transcript(
                                 transcript['text'],
                                 video_info={
@@ -743,6 +755,7 @@ elif page == "📱 小紅書":
                             
                             knowledge_str = knowledge_result.get('knowledge', '') if isinstance(knowledge_result, dict) else str(knowledge_result)
                             
+                            on_progress("💾 寫入檔案中...")
                             filename = injector.generate_safe_filename(note['title'])
                             output_file = output_dir / f"{filename}.md"
                             
@@ -768,28 +781,51 @@ elif page == "📱 小紅書":
                 # === 多線程處理 (API模式) / 串行處理 (本地模式) ===
                 from concurrent.futures import ThreadPoolExecutor, as_completed
                 
+                total_notes = len(selected_notes)
+                
                 if xhs_whisper_backend in ["groq", "openai"] and xhs_api_workers > 1:
-                    # 多線程並行處理
+                    # 多線程並行處理 (注意：多線程時進度回調可能交錯)
                     with ThreadPoolExecutor(max_workers=xhs_api_workers) as executor:
-                        futures = {executor.submit(process_single_note, note): note for note in selected_notes}
+                        futures = {executor.submit(process_single_note, note, i, total_notes): (i, note) 
+                                   for i, note in enumerate(selected_notes)}
                         completed = 0
                         for future in as_completed(futures):
                             completed += 1
-                            progress = int((completed / len(selected_notes)) * 100)
-                            note = futures[future]
-                            progress_bar.progress(progress, text=f"處理: {completed}/{len(selected_notes)} - {note['title'][:20]}...")
+                            progress = int((completed / total_notes) * 100)
+                            idx, note = futures[future]
+                            progress_bar.progress(progress, text=f"處理: {completed}/{total_notes} - {note['title'][:20]}...")
+                            status_placeholder.info(f"🔄 {current_status['msg']}")
                             results.append(future.result())
                             if future.result()['success']:
                                 update_sidebar_stats()
                 else:
-                    # 串行處理 (本地 MLX)
+                    # 串行處理 (本地 MLX) - 可以實時更新狀態
                     for i, note in enumerate(selected_notes):
-                        progress = int(((i + 1) / len(selected_notes)) * 100)
-                        progress_bar.progress(progress, text=f"處理: {i+1}/{len(selected_notes)} - {note['title'][:20]}...")
-                        result = process_single_note(note)
+                        progress = int(((i + 1) / total_notes) * 100)
+                        progress_bar.progress(progress, text=f"處理: {i+1}/{total_notes} - {note['title'][:20]}...")
+                        
+                        # 定時更新狀態的回調
+                        import threading
+                        stop_status_update = threading.Event()
+                        
+                        def update_status_loop():
+                            while not stop_status_update.is_set():
+                                status_placeholder.info(f"🔄 {current_status['msg']}")
+                                stop_status_update.wait(0.5)
+                        
+                        status_thread = threading.Thread(target=update_status_loop, daemon=True)
+                        status_thread.start()
+                        
+                        result = process_single_note(note, i, total_notes)
+                        
+                        stop_status_update.set()
+                        status_thread.join(timeout=1)
+                        
                         results.append(result)
                         if result['success']:
                             update_sidebar_stats()
+                
+                status_placeholder.empty()
                 
                 # 統計結果
                 elapsed_time = time.time() - start_time

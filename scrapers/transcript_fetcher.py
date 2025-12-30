@@ -334,7 +334,8 @@ class TranscriptFetcher:
         return None
     
     def fetch(self, video_url: str, use_whisper_fallback: bool = True, 
-              whisper_backend: str = "mlx", whisper_model: str = "small") -> Optional[Dict]:
+              whisper_backend: str = "mlx", whisper_model: str = "small",
+              progress_callback=None) -> Optional[Dict]:
         """
         智能擷取逐字稿
         優先順序: YouTube API → yt-dlp → Whisper
@@ -344,10 +345,16 @@ class TranscriptFetcher:
             use_whisper_fallback: 是否使用 Whisper 備用
             whisper_backend: Whisper 後端 (mlx/groq/openai)
             whisper_model: Whisper 模型 (僅 mlx 使用)
+            progress_callback: 進度回調函數 (接收字符串訊息)
             
         Returns:
             逐字稿資訊
         """
+        def update_progress(msg: str):
+            print(msg)  # 保留終端輸出
+            if progress_callback:
+                progress_callback(msg)
+        
         # 記錄當前 URL 供 Whisper 語言檢測使用
         self._current_url = video_url
         
@@ -356,12 +363,14 @@ class TranscriptFetcher:
         
         # 1. 嘗試 YouTube API
         if video_id and YOUTUBE_TRANSCRIPT_API_AVAILABLE:
+            update_progress("📥 檢查 YouTube 字幕...")
             result = self.fetch_youtube_transcript(video_id)
             if result:
-                print(f"✅ 使用 YouTube API 獲取字幕 (語言: {result['language']})")
+                update_progress(f"✅ 使用 YouTube API 獲取字幕 (語言: {result['language']})")
                 return result
         
         # 2. 嘗試 yt-dlp 獲取內嵌字幕
+        update_progress("📥 下載內嵌字幕中...")
         result = self.fetch_with_ytdlp(video_url)
         if result:
             lang = result.get('language', '')
@@ -371,22 +380,23 @@ class TranscriptFetcher:
             is_xhs = 'xiaohongshu' in video_url or 'xhslink' in video_url
             
             if is_chinese:
-                print(f"✅ 使用 yt-dlp 獲取中文字幕 (語言: {lang})")
+                update_progress(f"✅ 使用 yt-dlp 獲取中文字幕 (語言: {lang})")
                 return result
             elif not is_xhs:
                 # 非小紅書內容，接受任何語言字幕
-                print(f"✅ 使用 yt-dlp 獲取字幕 (語言: {lang})")
+                update_progress(f"✅ 使用 yt-dlp 獲取字幕 (語言: {lang})")
                 return result
             else:
                 # 小紅書內容但只有英文字幕，改用 Whisper 中文辨識
-                print(f"⚠️ 小紅書內容僅有英文字幕 (語言: {lang})，改用 Whisper 中文辨識...")
+                update_progress(f"⚠️ 僅有英文字幕，改用 Whisper 中文辨識...")
         
         # 3. Whisper 備用
         if use_whisper_fallback:
-            print(f"⏳ 使用 Whisper ({whisper_backend}) 進行語音辨識...")
+            backend_names = {"groq": "Groq API", "openai": "OpenAI API", "mlx": "MLX 本地 GPU"}
+            update_progress(f"🎤 準備 Whisper 語音辨識 ({backend_names.get(whisper_backend, whisper_backend)})...")
             result = self.fetch_with_whisper(video_url, model=whisper_model, backend=whisper_backend)
             if result:
-                print(f"✅ 使用 {result.get('source', 'Whisper')} 完成語音辨識")
+                update_progress(f"✅ {result.get('source', 'Whisper')} 語音辨識完成")
                 return result
         
         print("❌ 無法獲取逐字稿")
