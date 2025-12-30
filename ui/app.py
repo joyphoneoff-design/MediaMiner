@@ -579,46 +579,27 @@ elif page == "📱 小紅書":
     
     if parse_btn and raw_text:
         import re
-        import subprocess
-        from concurrent.futures import ThreadPoolExecutor
         
         url_pattern = re.compile(r'https?://[^\s,;"\'\<\>]+')
         all_urls = url_pattern.findall(raw_text)
         xhs_urls = [url for url in all_urls if 'xhslink.com' in url or 'xiaohongshu.com' in url]
         
         if xhs_urls:
-            progress_text = st.empty()
-            progress_text.info(f"🔍 解析中 ({len(xhs_urls)} 個連結)...")
-            
-            def get_title(args):
-                i, url = args
+            # 快速模式：從輸入文字提取標題（無網路請求）
+            notes = []
+            for i, url in enumerate(xhs_urls):
                 title = None
-                try:
-                    result = subprocess.run(
-                        ["yt-dlp", "--get-title", "--cookies-from-browser", "chrome", url],
-                        capture_output=True, text=True, timeout=20
-                    )
-                    if result.returncode == 0 and result.stdout.strip():
-                        title = result.stdout.strip()[:50]
-                except Exception:
-                    pass
+                # 從 URL 前的文字提取標題
+                for line in raw_text.split('\n'):
+                    if url in line:
+                        before_url = line.split(url)[0].strip()
+                        if before_url and len(before_url) > 2:
+                            title = before_url[:50]
+                            break
                 
                 if not title:
-                    lines = raw_text.split('\n')
-                    for line in lines:
-                        if url in line:
-                            before_url = line.split(url)[0].strip()
-                            if before_url and len(before_url) > 2:
-                                title = before_url[:50]
-                                break
+                    title = f'小紅書筆記 #{i+1}'
                 
-                return i, url, title if title else f'小紅書筆記 #{i+1}'
-            
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                results = list(executor.map(get_title, enumerate(xhs_urls)))
-            
-            notes = []
-            for i, url, title in sorted(results, key=lambda x: x[0]):
                 notes.append({
                     'title': title,
                     'url': url,
@@ -626,7 +607,6 @@ elif page == "📱 小紅書":
                     'type': 'video'
                 })
             
-            progress_text.empty()
             st.session_state.xhs_notes = notes
             st.session_state.xhs_selected = set(range(len(notes)))
             st.success(f"✅ 找到 {len(notes)} 個小紅書連結")
