@@ -159,42 +159,244 @@ class XiaohongshuScraper:
             print(f"⚠️ Crawl4AI 錯誤: {e}")
             return None
     
-    def process_user_profile(self, profile_url: str, max_notes: int = 10) -> List[Dict]:
+    def get_user_notes(self, url: str, max_notes: int = 0) -> List[Dict]:
         """
-        處理用戶個人頁面，提取筆記列表
+        獲取用戶所有筆記列表 (類似 YouTube get_channel_videos)
         
         Args:
-            profile_url: 用戶頁面 URL
-            max_notes: 最大筆記數
+            url: 小紅書 URL (支持短網址 xhslink.com)
+            max_notes: 最大筆記數 (0 = 全部)
             
         Returns:
-            處理結果列表
+            [{'title': ..., 'url': ..., 'note_id': ..., 'type': 'video'|'image', ...}]
         """
-        print(f"📱 處理小紅書用戶頁面: {profile_url}")
+        print(f"📱 獲取小紅書用戶筆記列表...")
         
-        # 嘗試使用 Crawl4AI 獲取頁面
-        content = self.scrape_with_crawl4ai(profile_url)
-        
-        if content:
-            # 從內容中提取筆記連結
-            note_links = re.findall(r'https?://[^\s]+/explore/[a-zA-Z0-9]+', content)
-            note_links = list(set(note_links))[:max_notes]
-            
-            print(f"   找到 {len(note_links)} 個筆記連結")
-            
-            results = []
-            for link in note_links:
-                result = self.download_video_with_ytdlp(link)
-                results.append({
-                    'url': link,
-                    **result
-                })
-            
-            return results
-        else:
-            print("   ⚠️ 無法獲取用戶頁面內容")
-            print("   💡 建議：手動複製筆記連結進行處理")
+        # Step 1: 解析 URL 獲取用戶 ID
+        full_url = self._resolve_to_profile_url(url)
+        if not full_url:
+            print("❌ 無法解析 URL")
             return []
+        
+        user_id = self.extract_user_id(full_url)
+        if not user_id:
+            print(f"❌ 無法從 URL 提取用戶 ID: {full_url}")
+            return []
+        
+        print(f"   用戶 ID: {user_id}")
+        
+        # Step 2: 使用 API 獲取筆記列表
+        notes = self._fetch_notes_via_api(user_id, max_notes)
+        
+        if not notes:
+            # 備用方案 1: 使用網頁爬取
+            print("   嘗試備用方案: 網頁爬取...")
+            notes = self._fetch_notes_via_web(full_url, max_notes)
+        
+        if not notes:
+            # 備用方案 2: 使用 Playwright 瀏覽器自動化
+            print("   嘗試備用方案 2: Playwright 瀏覽器...")
+            notes = self._fetch_notes_via_playwright(full_url, max_notes)
+        
+        print(f"   ✅ 找到 {len(notes)} 個筆記")
+        return notes
+    
+    def _resolve_to_profile_url(self, url: str) -> Optional[str]:
+        """解析短網址到完整用戶頁面 URL"""
+        # 如果已經是完整 URL
+        if 'xiaohongshu.com/user/profile' in url:
+            return url
+        
+        # 使用 yt-dlp 解析短網址 (它會跟隨重定向)
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['yt-dlp', '--dump-json', url],
+                capture_output=True, text=True, timeout=30
+            )
+            # yt-dlp 會輸出錯誤信息中包含完整 URL
+            if 'xiaohongshu.com/user/profile' in result.stderr:
+                import re
+                match = re.search(r'(https://www\.xiaohongshu\.com/user/profile/[^\s\?]+)', result.stderr)
+                if match:
+                    return match.group(1)
+        except Exception as e:
+            print(f"   ⚠️ yt-dlp 解析失敗: {e}")
+        
+        # 備用: 直接 HEAD 請求
+        try:
+            response = requests.head(url, allow_redirects=True, timeout=10)
+            if 'xiaohongshu.com' in response.url:
+                return response.url
+        except:
+            pass
+        
+        return None
+    
+    def _fetch_notes_via_api(self, user_id: str, max_notes: int = 0) -> List[Dict]:
+        """使用小紅書 API 獲取筆記列表"""
+        notes = []
+        cursor = ""
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Origin': 'https://www.xiaohongshu.com',
+            'Referer': f'https://www.xiaohongshu.com/user/profile/{user_id}',
+        }
+        
+        # 小紅書 web API endpoint
+        api_url = f"https://edith.xiaohongshu.com/api/sns/web/v1/user_posted"
+        
+        try:
+            for page in range(20):  # 最多 20 頁
+                params = {
+                    'num': 30,
+                    'cursor': cursor,
+                    'user_id': user_id,
+                    'image_formats': 'jpg,webp,avif'
+                }
+                
+                response = requests.get(api_url, headers=headers, params=params, timeout=15)
+                
+                if response.status_code != 200:
+                    print(f"   ⚠️ API 返回 {response.status_code}")
+                    break
+                
+                data = response.json()
+                
+                if not data.get('success'):
+                    break
+                
+                items = data.get('data', {}).get('notes', [])
+                if not items:
+                    break
+                
+                for item in items:
+                    note = {
+                        'title': item.get('display_title', '無標題'),
+                        'note_id': item.get('note_id'),
+                        'url': f"https://www.xiaohongshu.com/explore/{item.get('note_id')}",
+                        'type': item.get('type', 'normal'),  # normal=圖片, video=影片
+                        'cover': item.get('cover', {}).get('url', ''),
+                        'likes': item.get('liked_count', 0),
+                        'user': item.get('user', {}).get('nickname', ''),
+                    }
+                    notes.append(note)
+                    
+                    if max_notes > 0 and len(notes) >= max_notes:
+                        return notes
+                
+                cursor = data.get('data', {}).get('cursor', '')
+                if not cursor or not data.get('data', {}).get('has_more'):
+                    break
+                    
+        except Exception as e:
+            print(f"   ⚠️ API 請求失敗: {e}")
+        
+        return notes
+    
+    def _fetch_notes_via_web(self, profile_url: str, max_notes: int = 0) -> List[Dict]:
+        """備用: 使用網頁爬取獲取筆記列表"""
+        notes = []
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+        }
+        
+        try:
+            response = requests.get(profile_url, headers=headers, timeout=15)
+            
+            if response.status_code == 200:
+                # 從 HTML 中提取筆記資訊
+                import re
+                
+                # 查找筆記連結
+                note_pattern = r'/explore/([a-zA-Z0-9]+)'
+                note_ids = list(set(re.findall(note_pattern, response.text)))
+                
+                for note_id in note_ids[:max_notes if max_notes > 0 else len(note_ids)]:
+                    notes.append({
+                        'title': f'筆記 {note_id[:8]}...',
+                        'note_id': note_id,
+                        'url': f'https://www.xiaohongshu.com/explore/{note_id}',
+                        'type': 'unknown',
+                        'cover': '',
+                        'likes': 0,
+                        'user': '',
+                    })
+                    
+        except Exception as e:
+            print(f"   ⚠️ 網頁爬取失敗: {e}")
+        
+        return notes
+    
+    def _fetch_notes_via_playwright(self, profile_url: str, max_notes: int = 0) -> List[Dict]:
+        """使用 Playwright 瀏覽器自動化獲取筆記列表"""
+        notes = []
+        
+        try:
+            from playwright.sync_api import sync_playwright
+            import time
+            
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                    viewport={'width': 390, 'height': 844}
+                )
+                page = context.new_page()
+                
+                # 訪問用戶頁面
+                page.goto(profile_url, wait_until='networkidle', timeout=30000)
+                time.sleep(2)  # 等待動態內容載入
+                
+                # 滾動載入更多筆記
+                for _ in range(3):
+                    page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    time.sleep(1)
+                
+                # 提取筆記資訊
+                content = page.content()
+                
+                # 從 HTML 中提取筆記連結和標題
+                import re
+                
+                # 查找筆記連結
+                note_pattern = r'/explore/([a-zA-Z0-9]+)'
+                note_ids = list(set(re.findall(note_pattern, content)))
+                
+                # 嘗試提取標題
+                title_pattern = r'<span[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)</span>'
+                titles = re.findall(title_pattern, content)
+                
+                for i, note_id in enumerate(note_ids[:max_notes if max_notes > 0 else len(note_ids)]):
+                    title = titles[i] if i < len(titles) else f'筆記 {note_id[:8]}...'
+                    notes.append({
+                        'title': title,
+                        'note_id': note_id,
+                        'url': f'https://www.xiaohongshu.com/explore/{note_id}',
+                        'type': 'unknown',
+                        'cover': '',
+                        'likes': 0,
+                        'user': '',
+                    })
+                
+                browser.close()
+                
+        except ImportError:
+            print("   ⚠️ Playwright 未安裝，請執行: pip install playwright && playwright install chromium")
+        except Exception as e:
+            print(f"   ⚠️ Playwright 爬取失敗: {e}")
+        
+        return notes
+    
+    def process_user_profile(self, profile_url: str, max_notes: int = 10) -> List[Dict]:
+        """處理用戶個人頁面 (保留向後兼容)"""
+        return self.get_user_notes(profile_url, max_notes)
 
 
 def test_xiaohongshu():

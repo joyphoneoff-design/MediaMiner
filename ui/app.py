@@ -102,7 +102,7 @@ with st.sidebar:
     # 導航
     page = st.radio(
         "功能選擇",
-        ["📺 頻道擷取", "📊 處理狀態", "🔍 知識問答", "⚙️ 設定"],
+        ["📺 頻道擷取", "📱 小紅書", "📊 處理狀態", "🔍 知識問答", "⚙️ 設定"],
         label_visibility="collapsed"
     )
     
@@ -547,6 +547,222 @@ if page == "📺 頻道擷取":
                 
             except Exception as e:
                 st.error(f"❌ 錯誤: {str(e)}")
+            finally:
+                st.session_state.processing = False
+
+# 小紅書擷取頁面
+elif page == "📱 小紅書":
+    st.markdown("## 📱 小紅書擷取")
+    
+    st.info("""
+    **使用方式**：貼上小紅書筆記連結（支援 xhslink.com 短網址）
+    
+    💡 如何獲取連結：在小紅書 App 或網頁版，點擊「分享」→「複製連結」
+    """)
+    
+    # Session state for XHS notes
+    if 'xhs_notes' not in st.session_state:
+        st.session_state.xhs_notes = []
+    if 'xhs_selected' not in st.session_state:
+        st.session_state.xhs_selected = set()
+    
+    st.divider()
+    
+    # ========== 步驟 1: 輸入筆記連結 ==========
+    with st.form("xhs_url_form"):
+        raw_text = st.text_area(
+            "貼上包含筆記連結的文字",
+            placeholder="例如:\n分享一個很棒的創業心得 https://xhslink.com/xxx\n另一個好內容 https://www.xiaohongshu.com/explore/yyy",
+            height=150
+        )
+        parse_btn = st.form_submit_button("📋 解析連結", type="secondary")
+    
+    if parse_btn and raw_text:
+        # 提取 URL
+        import re
+        url_pattern = re.compile(r'https?://[^\s,;"\'<>]+')
+        all_urls = url_pattern.findall(raw_text)
+        
+        # 過濾出小紅書相關連結
+        xhs_urls = [url for url in all_urls if 'xhslink.com' in url or 'xiaohongshu.com' in url]
+        
+        if xhs_urls:
+            # 解析為筆記格式
+            notes = []
+            for i, url in enumerate(xhs_urls):
+                notes.append({
+                    'title': f'小紅書筆記 #{i+1}',
+                    'url': url,
+                    'note_id': url.split('/')[-1][:10] if '/' in url else f'note_{i}',
+                    'type': 'unknown'
+                })
+            
+            st.session_state.xhs_notes = notes
+            st.session_state.xhs_selected = set(range(len(notes)))  # 預設全選
+            st.success(f"✅ 找到 {len(notes)} 個小紅書連結")
+            st.rerun()
+        else:
+            st.error("❌ 未找到有效的小紅書連結")
+    
+    # ========== 步驟 2: 顯示連結列表與選擇 ==========
+    if st.session_state.xhs_notes:
+        st.markdown("### 📝 連結列表")
+        
+        # 全選/清除按鈕
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ 全選", key="xhs_select_all"):
+                st.session_state.xhs_selected = set(range(len(st.session_state.xhs_notes)))
+                st.rerun()
+        with col2:
+            if st.button("❌ 清除選擇", key="xhs_clear_all"):
+                st.session_state.xhs_selected = set()
+                st.rerun()
+        
+        # 顯示連結列表
+        for idx, note in enumerate(st.session_state.xhs_notes):
+            checked = st.checkbox(
+                f"**{note['title']}** - `{note['url'][:50]}...`",
+                value=idx in st.session_state.xhs_selected,
+                key=f"xhs_note_{idx}"
+            )
+            if checked and idx not in st.session_state.xhs_selected:
+                st.session_state.xhs_selected.add(idx)
+            elif not checked and idx in st.session_state.xhs_selected:
+                st.session_state.xhs_selected.discard(idx)
+        
+        st.markdown(f"**已選擇: {len(st.session_state.xhs_selected)}/{len(st.session_state.xhs_notes)}**")
+        
+        st.divider()
+        
+        # ========== 步驟 3: 開始處理 ==========
+        st.markdown("### 🎬 開始處理")
+        
+        # Whisper 設定 (複用 YouTube 設定)
+        with st.expander("⚙️ 處理設定", expanded=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                xhs_whisper_backend = st.selectbox(
+                    "Whisper 後端",
+                    options=["mlx", "groq", "openai"],
+                    format_func=lambda x: {
+                        "mlx": "🖥️ MLX (本地 GPU)", 
+                        "groq": "⚡ Groq API (免費超快)", 
+                        "openai": "🔷 OpenAI API (付費)"
+                    }.get(x, x),
+                    key="xhs_whisper_backend"
+                )
+            with col2:
+                st.info("📌 使用 Turbo 模型")
+        
+        if st.button("🚀 開始下載並處理", type="primary", 
+                     disabled=len(st.session_state.xhs_selected) == 0 or st.session_state.processing,
+                     key="xhs_start_process"):
+            
+            st.session_state.processing = True
+            selected_notes = [st.session_state.xhs_notes[i] for i in sorted(st.session_state.xhs_selected)]
+            
+            # 初始化處理器
+            from scrapers.xiaohongshu_scraper import XiaohongshuScraper
+            from scrapers.transcript_fetcher import TranscriptFetcher
+            from processors.knowledge_extractor import KnowledgeExtractor
+            from processors.metadata_injector import MetadataInjector
+            
+            output_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            progress_bar = st.progress(0, text="準備中...")
+            metrics_placeholder = st.empty()
+            
+            results = []
+            start_time = time.time()
+            
+            try:
+                fetcher = TranscriptFetcher()
+                extractor = KnowledgeExtractor()
+                injector = MetadataInjector()
+                
+                for i, note in enumerate(selected_notes):
+                    progress = int(((i + 1) / len(selected_notes)) * 100)
+                    progress_bar.progress(progress, text=f"處理: {i+1}/{len(selected_notes)} - {note['title'][:20]}...")
+                    
+                    try:
+                        # 使用 yt-dlp 下載並轉寫
+                        transcript = fetcher.fetch(
+                            note['url'],
+                            whisper_backend=xhs_whisper_backend,
+                            whisper_model='large-v3-turbo'
+                        )
+                        
+                        if transcript:
+                            # 提取知識
+                            knowledge = extractor.process_transcript(
+                                transcript['text'],
+                                video_info={
+                                    'title': note['title'],
+                                    'channel': '小紅書',
+                                    'duration': None
+                                }
+                            )
+                            
+                            # 生成 MD
+                            filename = injector.generate_safe_filename(note['title'])
+                            output_file = output_dir / f"{filename}.md"
+                            
+                            md_content = injector.generate_md_output(
+                                video_info={
+                                    'title': note['title'],
+                                    'url': note['url'],
+                                    'channel': '小紅書'
+                                },
+                                transcript=transcript,
+                                knowledge=knowledge
+                            )
+                            
+                            output_file.write_text(md_content, encoding='utf-8')
+                            
+                            results.append({
+                                'note': note,
+                                'success': True,
+                                'file': str(output_file)
+                            })
+                            update_sidebar_stats()
+                        else:
+                            results.append({
+                                'note': note,
+                                'success': False,
+                                'error': '無法獲取逐字稿（可能是純圖片筆記）'
+                            })
+                            
+                    except Exception as e:
+                        results.append({
+                            'note': note,
+                            'success': False,
+                            'error': str(e)[:50]
+                        })
+                
+                # 統計結果
+                elapsed_time = time.time() - start_time
+                success_count = sum(1 for r in results if r['success'])
+                
+                progress_bar.progress(100, text="✅ 完成!")
+                
+                with metrics_placeholder.container():
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("✅ 成功", f"{success_count}/{len(results)}")
+                    with col2:
+                        st.metric("❌ 失敗", len(results) - success_count)
+                    with col3:
+                        st.metric("⏱️ 耗時", f"{elapsed_time:.1f}s")
+                
+                if success_count > 0:
+                    st.success(f"🎉 完成! 成功處理 {success_count}/{len(selected_notes)} 個筆記")
+                else:
+                    st.warning("⚠️ 處理失敗。小紅書筆記可能是純圖片，無法提取語音逐字稿。")
+                    
+            except Exception as e:
+                st.error(f"❌ 發生錯誤: {str(e)}")
             finally:
                 st.session_state.processing = False
 
