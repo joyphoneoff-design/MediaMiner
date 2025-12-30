@@ -710,14 +710,15 @@ elif page == "📱 小紅書":
                             filename = injector.generate_safe_filename(note['title'])
                             output_file = output_dir / f"{filename}.md"
                             
-                            md_content = injector.generate_md_output(
+                            md_content = injector.create_markdown(
+                                content=transcript.get('text', ''),
+                                knowledge=knowledge,
                                 video_info={
                                     'title': note['title'],
                                     'url': note['url'],
-                                    'channel': '小紅書'
-                                },
-                                transcript=transcript,
-                                knowledge=knowledge
+                                    'source': '小紅書',
+                                    'platform': 'xiaohongshu'
+                                }
                             )
                             
                             output_file.write_text(md_content, encoding='utf-8')
