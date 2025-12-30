@@ -663,10 +663,10 @@ elif page == "📱 小紅書":
             with col1:
                 xhs_whisper_backend = st.selectbox(
                     "Whisper 後端",
-                    options=["mlx", "groq", "openai"],
+                    options=["groq", "mlx", "openai"],
                     format_func=lambda x: {
+                        "groq": "⚡ Groq API (免費超快)",
                         "mlx": "🖥️ MLX (本地 GPU)", 
-                        "groq": "⚡ Groq API (免費超快)", 
                         "openai": "🔷 OpenAI API (付費)"
                     }.get(x, x),
                     key="xhs_whisper_backend"
