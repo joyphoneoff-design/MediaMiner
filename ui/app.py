@@ -571,19 +571,31 @@ elif page == "📱 小紅書":
     # ========== 方式 A: 從用戶主頁獲取筆記列表 ==========
     st.markdown("### 📥 方式 A: 從用戶主頁獲取")
     
+    # Chrome Debug 模式說明
+    with st.expander("💡 如何啟用完整獲取模式（推薦）", expanded=False):
+        st.markdown("""
+        **Chrome Debug 模式可讓系統使用您的登入狀態獲取完整筆記列表：**
+        
+        1. **完全關閉 Chrome**（Command+Q）
+        2. **執行以下終端命令**：
+        ```bash
+        /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222
+        ```
+        3. **在 Chrome 中登入小紅書**
+        4. 返回此頁面，輸入主頁 URL 並點擊「獲取筆記列表」
+        """)
+    
     with st.form("xhs_profile_form"):
         profile_url = st.text_input(
             "輸入小紅書用戶主頁 URL",
             placeholder="https://www.xiaohongshu.com/user/profile/xxx 或 xhslink.com/xxx",
             help="支持完整主頁 URL 或分享的短連結"
         )
-        col_a1, col_a2, col_a3 = st.columns([2, 2, 1])
+        col_a1, col_a2 = st.columns([1, 1])
         with col_a1:
-            max_notes = st.number_input("最大筆記數", min_value=5, max_value=100, value=20, step=5)
+            max_notes = st.number_input("最大筆記數", min_value=0, max_value=500, value=0, step=10, help="0 = 獲取全部")
         with col_a2:
-            fetch_profile_btn = st.form_submit_button("🔍 獲取筆記列表", type="secondary")
-        with col_a3:
-            st.caption("⚠️ 需要登入")
+            fetch_profile_btn = st.form_submit_button("🔍 獲取筆記列表", type="secondary", use_container_width=True)
     
     if fetch_profile_btn and profile_url:
         with st.spinner("正在獲取筆記列表..."):

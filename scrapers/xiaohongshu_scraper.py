@@ -185,17 +185,22 @@ class XiaohongshuScraper:
         
         print(f"   用戶 ID: {user_id}")
         
-        # Step 2: 使用 API 獲取筆記列表
-        notes = self._fetch_notes_via_api(user_id, max_notes)
+        # Step 2: 優先使用 CDP (需要 Chrome Debug 模式)
+        notes = self._fetch_notes_via_cdp(full_url, max_notes)
         
         if not notes:
-            # 備用方案 1: 使用網頁爬取
-            print("   嘗試備用方案: 網頁爬取...")
+            # 備用方案 1: 使用 API
+            print("   嘗試備用方案: API...")
+            notes = self._fetch_notes_via_api(user_id, max_notes)
+        
+        if not notes:
+            # 備用方案 2: 使用網頁爬取
+            print("   嘗試備用方案 2: 網頁爬取...")
             notes = self._fetch_notes_via_web(full_url, max_notes)
         
         if not notes:
-            # 備用方案 2: 使用 Playwright 瀏覽器自動化
-            print("   嘗試備用方案 2: Playwright 瀏覽器...")
+            # 備用方案 3: 使用 Playwright 瀏覽器自動化
+            print("   嘗試備用方案 3: Playwright 瀏覽器...")
             notes = self._fetch_notes_via_playwright(full_url, max_notes)
         
         print(f"   ✅ 找到 {len(notes)} 個筆記")
@@ -391,6 +396,82 @@ class XiaohongshuScraper:
             print("   ⚠️ Playwright 未安裝，請執行: pip install playwright && playwright install chromium")
         except Exception as e:
             print(f"   ⚠️ Playwright 爬取失敗: {e}")
+        
+        return notes
+    
+    def _fetch_notes_via_cdp(self, profile_url: str, max_notes: int = 0) -> List[Dict]:
+        """使用 Chrome Debug Protocol 連接已登入的瀏覽器獲取筆記列表"""
+        notes = []
+        
+        try:
+            import socket
+            # 檢查 Chrome Debug 端口是否可用
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            result = sock.connect_ex(('localhost', 9222))
+            sock.close()
+            
+            if result != 0:
+                print("   ⚠️ Chrome 未在 Debug 模式運行 (端口 9222)")
+                return notes
+            
+            from playwright.sync_api import sync_playwright
+            import time
+            
+            print("   🔗 連接到 Chrome Debug Protocol...")
+            
+            with sync_playwright() as p:
+                browser = p.chromium.connect_over_cdp('http://localhost:9222')
+                context = browser.contexts[0] if browser.contexts else None
+                
+                if not context:
+                    print("   ⚠️ 無法獲取瀏覽器上下文")
+                    return notes
+                
+                page = context.new_page()
+                
+                print(f"   📱 訪問用戶頁面...")
+                page.goto(profile_url, wait_until='load', timeout=30000)
+                time.sleep(3)
+                
+                # 滾動載入更多內容
+                scroll_count = 10 if max_notes == 0 else max(3, max_notes // 10)
+                for i in range(scroll_count):
+                    page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    time.sleep(1.5)
+                    print(f"   📜 滾動 {i+1}/{scroll_count}...")
+                
+                content = page.content()
+                page.close()
+                
+                # 提取筆記連結
+                note_pattern = r'/explore/([a-zA-Z0-9]+)'
+                note_ids = list(dict.fromkeys(re.findall(note_pattern, content)))  # 保持順序去重
+                
+                # 嘗試提取標題 (從 DOM 中)
+                title_pattern = r'class="[^"]*title[^"]*"[^>]*>([^<]+)<'
+                titles = re.findall(title_pattern, content)
+                
+                for i, note_id in enumerate(note_ids):
+                    if max_notes > 0 and len(notes) >= max_notes:
+                        break
+                    
+                    title = titles[i] if i < len(titles) else f'筆記 {note_id[:8]}...'
+                    notes.append({
+                        'title': title,
+                        'note_id': note_id,
+                        'url': f'https://www.xiaohongshu.com/explore/{note_id}',
+                        'type': 'video',
+                        'cover': '',
+                        'likes': 0,
+                        'user': '',
+                    })
+                
+                print(f"   ✅ 通過 CDP 找到 {len(notes)} 個筆記")
+                
+        except ImportError:
+            print("   ⚠️ Playwright 未安裝")
+        except Exception as e:
+            print(f"   ⚠️ CDP 連接失敗: {e}")
         
         return notes
     
