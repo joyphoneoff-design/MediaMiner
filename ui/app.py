@@ -726,13 +726,16 @@ elif page == "📱 小紅書":
                     fetcher.cleanup_temp_files(max_age_days=3)
                 
                 # 用於顯示當前狀態的變數
-                current_status = {"msg": "準備中..."}
+                current_status = {"msg": "準備中...", "steps": []}
                 
-                # === 單筆處理函數 ===
+                # === 單筆處理函數（包含步驟記錄）===
                 def process_single_note(note, note_idx=0, total=1):
+                    steps = []  # 收集處理步驟
+                    
                     try:
-                        # 進度回調函數
+                        # 進度回調函數 - 記錄步驟
                         def on_progress(msg):
+                            steps.append(msg)
                             current_status["msg"] = f"[{note_idx+1}/{total}] {note['title'][:15]}... | {msg}"
                         
                         on_progress("📥 開始處理...")
@@ -773,20 +776,24 @@ elif page == "📱 小紅書":
                             )
                             
                             output_file.write_text(md_content, encoding='utf-8')
-                            return {'note': note, 'success': True, 'file': str(output_file)}
+                            on_progress("✅ 完成!")
+                            return {'note': note, 'success': True, 'file': str(output_file), 'steps': steps}
                         else:
-                            return {'note': note, 'success': False, 'error': '無法獲取逐字稿（可能是純圖片筆記）'}
+                            on_progress("❌ 無法獲取逐字稿")
+                            return {'note': note, 'success': False, 'error': '無法獲取逐字稿（可能是純圖片筆記）', 'steps': steps}
                             
                     except Exception as e:
-                        return {'note': note, 'success': False, 'error': str(e)[:100]}
+                        steps.append(f"❌ 錯誤: {str(e)[:50]}")
+                        return {'note': note, 'success': False, 'error': str(e)[:100], 'steps': steps}
                 
                 # === 多線程處理 (API模式) / 串行處理 (本地模式) ===
                 from concurrent.futures import ThreadPoolExecutor, as_completed
                 
                 total_notes = len(selected_notes)
+                log_container = st.container()  # 用於顯示處理日誌
                 
                 if xhs_whisper_backend in ["groq", "openai"] and xhs_api_workers > 1:
-                    # 多線程並行處理 (注意：多線程時進度回調可能交錯)
+                    # 多線程並行處理
                     with ThreadPoolExecutor(max_workers=xhs_api_workers) as executor:
                         futures = {executor.submit(process_single_note, note, i, total_notes): (i, note) 
                                    for i, note in enumerate(selected_notes)}
@@ -795,33 +802,37 @@ elif page == "📱 小紅書":
                             completed += 1
                             progress = int((completed / total_notes) * 100)
                             idx, note = futures[future]
-                            progress_bar.progress(progress, text=f"處理: {completed}/{total_notes} - {note['title'][:20]}...")
-                            status_placeholder.info(f"🔄 {current_status['msg']}")
-                            results.append(future.result())
-                            if future.result()['success']:
+                            result = future.result()
+                            
+                            progress_bar.progress(progress, text=f"✅ 完成: {completed}/{total_notes}")
+                            
+                            # 顯示該筆記的處理步驟
+                            with log_container:
+                                steps_str = " → ".join(result.get('steps', []))
+                                if result['success']:
+                                    st.success(f"**[{completed}] {note['title'][:25]}...** | {steps_str}")
+                                else:
+                                    st.error(f"**[{completed}] {note['title'][:25]}...** | {steps_str}")
+                            
+                            results.append(result)
+                            if result['success']:
                                 update_sidebar_stats()
                 else:
-                    # 串行處理 (本地 MLX) - 可以實時更新狀態
+                    # 串行處理
                     for i, note in enumerate(selected_notes):
-                        progress = int(((i + 1) / total_notes) * 100)
-                        progress_bar.progress(progress, text=f"處理: {i+1}/{total_notes} - {note['title'][:20]}...")
-                        
-                        # 定時更新狀態的回調
-                        import threading
-                        stop_status_update = threading.Event()
-                        
-                        def update_status_loop():
-                            while not stop_status_update.is_set():
-                                status_placeholder.info(f"🔄 {current_status['msg']}")
-                                stop_status_update.wait(0.5)
-                        
-                        status_thread = threading.Thread(target=update_status_loop, daemon=True)
-                        status_thread.start()
+                        progress_bar.progress(int((i / total_notes) * 100), text=f"處理: {i+1}/{total_notes} - {note['title'][:20]}...")
+                        status_placeholder.info(f"🔄 處理中: {note['title'][:30]}...")
                         
                         result = process_single_note(note, i, total_notes)
                         
-                        stop_status_update.set()
-                        status_thread.join(timeout=1)
+                        # 顯示該筆記的處理步驟
+                        progress_bar.progress(int(((i+1) / total_notes) * 100), text=f"✅ 完成: {i+1}/{total_notes}")
+                        with log_container:
+                            steps_str = " → ".join(result.get('steps', []))
+                            if result['success']:
+                                st.success(f"**[{i+1}] {note['title'][:25]}...** | {steps_str}")
+                            else:
+                                st.error(f"**[{i+1}] {note['title'][:25]}...** | {steps_str}")
                         
                         results.append(result)
                         if result['success']:
