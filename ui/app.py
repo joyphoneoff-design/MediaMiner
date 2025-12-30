@@ -633,22 +633,24 @@ elif page == "📱 小紅書":
         
         for idx, note in enumerate(st.session_state.xhs_notes):
             checkbox_key = f"xhs_note_{idx}"
-            # 初始化 checkbox 狀態
+            
+            # 確保 session state 初始化
             if checkbox_key not in st.session_state:
                 st.session_state[checkbox_key] = idx in st.session_state.xhs_selected
             
-            # 同步 checkbox 狀態到 xhs_selected
-            is_selected = st.checkbox(
+            # 使用 on_change 回調同步狀態
+            def on_checkbox_change(note_idx, key):
+                if st.session_state[key]:
+                    st.session_state.xhs_selected.add(note_idx)
+                else:
+                    st.session_state.xhs_selected.discard(note_idx)
+            
+            st.checkbox(
                 f"**{note['title']}** - `{note['url'][:50]}...`",
                 key=checkbox_key,
-                value=idx in st.session_state.xhs_selected
+                on_change=on_checkbox_change,
+                args=(idx, checkbox_key)
             )
-            
-            # 即時同步勾選狀態
-            if is_selected:
-                st.session_state.xhs_selected.add(idx)
-            else:
-                st.session_state.xhs_selected.discard(idx)
         
         st.caption(f"**已選擇: {len(st.session_state.xhs_selected)}/{len(st.session_state.xhs_notes)}**")
         
