@@ -575,38 +575,93 @@ elif page == "📱 小紅書":
             placeholder="例如:\n分享一個很棒的創業心得 https://xhslink.com/xxx\n另一個好內容 https://www.xiaohongshu.com/explore/yyy",
             height=150
         )
-        parse_btn = st.form_submit_button("📋 解析連結", type="secondary")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            parse_btn = st.form_submit_button("📋 解析連結", type="secondary")
+        with col2:
+            fetch_titles = st.checkbox("獲取真實標題", value=False, help="較慢但顯示影片真實標題")
     
     if parse_btn and raw_text:
+        # 提取 URL
         import re
-        
+        import subprocess
         url_pattern = re.compile(r'https?://[^\s,;"\'\<\>]+')
         all_urls = url_pattern.findall(raw_text)
+        
+        # 過濾出小紅書相關連結
         xhs_urls = [url for url in all_urls if 'xhslink.com' in url or 'xiaohongshu.com' in url]
         
         if xhs_urls:
-            # 快速模式：從輸入文字提取標題（無網路請求）
             notes = []
-            for i, url in enumerate(xhs_urls):
-                title = None
-                # 從 URL 前的文字提取標題
-                for line in raw_text.split('\n'):
-                    if url in line:
-                        before_url = line.split(url)[0].strip()
-                        if before_url and len(before_url) > 2:
-                            title = before_url[:50]
-                            break
-                
-                if not title:
-                    title = f'小紅書筆記 #{i+1}'
-                
-                notes.append({
-                    'title': title,
-                    'url': url,
-                    'note_id': url.split('/')[-1][:10] if '/' in url else f'note_{i}',
-                    'type': 'video'
-                })
+            progress_text = st.empty()
             
+            if fetch_titles:
+                # === 多線程獲取真實標題 ===
+                from concurrent.futures import ThreadPoolExecutor
+                
+                def get_title(args):
+                    i, url = args
+                    title = None
+                    
+                    # 策略 1: 優先從輸入文字提取（最可靠）
+                    lines = raw_text.split('\n')
+                    for line in lines:
+                        if url in line:
+                            before_url = line.split(url)[0].strip()
+                            if before_url and len(before_url) > 2:
+                                title = before_url[:60]
+                                break
+                    
+                    # 策略 2: 若無文字，使用 yt-dlp 獲取真實標題
+                    if not title:
+                        try:
+                            result = subprocess.run(
+                                ["yt-dlp", "--get-title", "--cookies-from-browser", "chrome", 
+                                 "--no-warnings", "--ignore-errors", url],
+                                capture_output=True, text=True, timeout=25
+                            )
+                            if result.returncode == 0 and result.stdout.strip():
+                                title = result.stdout.strip()[:60]
+                        except Exception:
+                            pass
+                    
+                    return i, url, title if title else f'小紅書筆記 #{i+1}'
+                
+                progress_text.info(f"🔍 多線程解析中 ({len(xhs_urls)} 個連結)...")
+                
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    results = list(executor.map(get_title, enumerate(xhs_urls)))
+                
+                for i, url, title in sorted(results, key=lambda x: x[0]):
+                    notes.append({
+                        'title': title,
+                        'url': url,
+                        'note_id': url.split('/')[-1][:10] if '/' in url else f'note_{i}',
+                        'type': 'video'
+                    })
+            else:
+                # === 快速模式：從輸入文字提取或使用編號 ===
+                for i, url in enumerate(xhs_urls):
+                    title = None
+                    lines = raw_text.split('\n')
+                    for line in lines:
+                        if url in line:
+                            before_url = line.split(url)[0].strip()
+                            if before_url and len(before_url) > 2:
+                                title = before_url[:50]
+                                break
+                    
+                    if not title:
+                        title = f'小紅書筆記 #{i+1}'
+                    
+                    notes.append({
+                        'title': title,
+                        'url': url,
+                        'note_id': url.split('/')[-1][:10] if '/' in url else f'note_{i}',
+                        'type': 'video'
+                    })
+            
+            progress_text.empty()
             st.session_state.xhs_notes = notes
             st.session_state.xhs_selected = set(range(len(notes)))
             st.success(f"✅ 找到 {len(notes)} 個小紅書連結")
