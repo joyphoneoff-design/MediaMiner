@@ -142,17 +142,17 @@ class TranscriptFetcher:
         temp_dir = self.output_dir / "_temp"
         temp_dir.mkdir(exist_ok=True)
         
-        # 下載音訊
-        audio_file = temp_dir / "audio.mp3"
+        # 使用唯一檔名避免多線程衝突
+        import uuid
+        unique_id = str(uuid.uuid4())[:8]
+        audio_file = temp_dir / f"audio_{unique_id}.mp3"
         
-        # 清理舊檔案
-        if audio_file.exists():
-            audio_file.unlink()
-        
+        # 下載音訊 (低音質足夠語音辨識，節省頻寬)
         cmd = [
             "yt-dlp",
             "-x",
             "--audio-format", "mp3",
+            "--audio-quality", "5",  # 較低音質 (~64kbps)，足夠辨識
             "-o", str(audio_file),
             "--cookies-from-browser", "chrome",
             video_url
@@ -442,6 +442,49 @@ class TranscriptFetcher:
                 if p.lower() in filename.lower():
                     return lang
         return 'unknown'
+    
+    def delete_audio_file(self, audio_path: Path) -> bool:
+        """刪除指定音頻檔案"""
+        try:
+            if audio_path and audio_path.exists():
+                audio_path.unlink()
+                return True
+        except Exception as e:
+            print(f"刪除失敗: {e}")
+        return False
+    
+    def cleanup_temp_files(self, max_age_days: int = 3) -> int:
+        """
+        清理過期臨時檔案
+        
+        Args:
+            max_age_days: 檔案最大保留天數
+            
+        Returns:
+            刪除的檔案數量
+        """
+        import time
+        temp_dir = self.output_dir / "_temp"
+        if not temp_dir.exists():
+            return 0
+        
+        deleted = 0
+        now = time.time()
+        max_age_seconds = max_age_days * 24 * 60 * 60
+        
+        for f in temp_dir.glob("*"):
+            if f.is_file():
+                file_age = now - f.stat().st_mtime
+                if file_age > max_age_seconds:
+                    try:
+                        f.unlink()
+                        deleted += 1
+                    except Exception:
+                        pass
+        
+        if deleted > 0:
+            print(f"🧹 清理了 {deleted} 個過期臨時檔案")
+        return deleted
 
 
 if __name__ == "__main__":

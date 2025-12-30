@@ -657,22 +657,38 @@ elif page == "📱 小紅書":
         # ========== 步驟 3: 開始處理 ==========
         st.markdown("### 🎬 開始處理")
         
-        # Whisper 設定 (複用 YouTube 設定)
+        # 處理設定 (對標 YouTube 頁面)
         with st.expander("⚙️ 處理設定", expanded=True):
-            col1, col2 = st.columns(2)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
+                xhs_batch_size = st.slider("批次大小", min_value=1, max_value=10, value=5,
+                                           help="每批處理的筆記數量", key="xhs_batch_size")
+            with col2:
                 xhs_whisper_backend = st.selectbox(
                     "Whisper 後端",
                     options=["groq", "mlx", "openai"],
                     format_func=lambda x: {
-                        "groq": "⚡ Groq API (免費超快)",
+                        "groq": "⚡ Groq (免費超快)",
                         "mlx": "🖥️ MLX (本地 GPU)", 
-                        "openai": "🔷 OpenAI API (付費)"
+                        "openai": "🔷 OpenAI (付費)"
                     }.get(x, x),
                     key="xhs_whisper_backend"
                 )
-            with col2:
-                st.info("📌 使用 Turbo 模型")
+            with col3:
+                if xhs_whisper_backend in ["groq", "openai"]:
+                    xhs_api_workers = st.slider("API 並行", min_value=1, max_value=5, value=3,
+                                                help="API 並行請求數 (建議 3)", key="xhs_api_workers")
+                else:
+                    xhs_api_workers = 1
+                    st.caption("🖥️ 本地處理")
+            with col4:
+                xhs_auto_cleanup = st.selectbox(
+                    "臨時檔清理",
+                    options=["即時刪除", "保留3天", "不刪除"],
+                    index=0,
+                    help="處理完成後如何處理音頻檔",
+                    key="xhs_auto_cleanup"
+                )
         
         if st.button("🚀 開始下載並處理", type="primary", 
                      disabled=len(st.session_state.xhs_selected) == 0 or st.session_state.processing,
@@ -702,12 +718,13 @@ elif page == "📱 小紅書":
                 extractor = KnowledgeExtractor()
                 injector = MetadataInjector()
                 
-                for i, note in enumerate(selected_notes):
-                    progress = int(((i + 1) / len(selected_notes)) * 100)
-                    progress_bar.progress(progress, text=f"處理: {i+1}/{len(selected_notes)} - {note['title'][:20]}...")
-                    
+                # 清理過期臨時檔案 (保留3天模式)
+                if xhs_auto_cleanup == "保留3天":
+                    fetcher.cleanup_temp_files(max_age_days=3)
+                
+                # === 單筆處理函數 ===
+                def process_single_note(note):
                     try:
-                        # 使用 yt-dlp 下載並轉寫
                         transcript = fetcher.fetch(
                             note['url'],
                             whisper_backend=xhs_whisper_backend,
@@ -715,7 +732,6 @@ elif page == "📱 小紅書":
                         )
                         
                         if transcript:
-                            # 提取知識 (返回 Dict，需要轉為字符串)
                             knowledge_result = extractor.process_transcript(
                                 transcript['text'],
                                 video_info={
@@ -725,10 +741,8 @@ elif page == "📱 小紅書":
                                 }
                             )
                             
-                            # 將知識 dict 轉為字符串
                             knowledge_str = knowledge_result.get('knowledge', '') if isinstance(knowledge_result, dict) else str(knowledge_result)
                             
-                            # 生成 MD
                             filename = injector.generate_safe_filename(note['title'])
                             output_file = output_dir / f"{filename}.md"
                             
@@ -744,26 +758,38 @@ elif page == "📱 小紅書":
                             )
                             
                             output_file.write_text(md_content, encoding='utf-8')
-                            
-                            results.append({
-                                'note': note,
-                                'success': True,
-                                'file': str(output_file)
-                            })
-                            update_sidebar_stats()
+                            return {'note': note, 'success': True, 'file': str(output_file)}
                         else:
-                            results.append({
-                                'note': note,
-                                'success': False,
-                                'error': '無法獲取逐字稿（可能是純圖片筆記）'
-                            })
+                            return {'note': note, 'success': False, 'error': '無法獲取逐字稿（可能是純圖片筆記）'}
                             
                     except Exception as e:
-                        results.append({
-                            'note': note,
-                            'success': False,
-                            'error': str(e)[:50]
-                        })
+                        return {'note': note, 'success': False, 'error': str(e)[:100]}
+                
+                # === 多線程處理 (API模式) / 串行處理 (本地模式) ===
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                
+                if xhs_whisper_backend in ["groq", "openai"] and xhs_api_workers > 1:
+                    # 多線程並行處理
+                    with ThreadPoolExecutor(max_workers=xhs_api_workers) as executor:
+                        futures = {executor.submit(process_single_note, note): note for note in selected_notes}
+                        completed = 0
+                        for future in as_completed(futures):
+                            completed += 1
+                            progress = int((completed / len(selected_notes)) * 100)
+                            note = futures[future]
+                            progress_bar.progress(progress, text=f"處理: {completed}/{len(selected_notes)} - {note['title'][:20]}...")
+                            results.append(future.result())
+                            if future.result()['success']:
+                                update_sidebar_stats()
+                else:
+                    # 串行處理 (本地 MLX)
+                    for i, note in enumerate(selected_notes):
+                        progress = int(((i + 1) / len(selected_notes)) * 100)
+                        progress_bar.progress(progress, text=f"處理: {i+1}/{len(selected_notes)} - {note['title'][:20]}...")
+                        result = process_single_note(note)
+                        results.append(result)
+                        if result['success']:
+                            update_sidebar_stats()
                 
                 # 統計結果
                 elapsed_time = time.time() - start_time
