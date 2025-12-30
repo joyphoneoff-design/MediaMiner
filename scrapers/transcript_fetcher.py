@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Optional, Dict, List
 from datetime import datetime
 
+# 載入環境變數
+from dotenv import load_dotenv
+load_dotenv()
+
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
     YOUTUBE_TRANSCRIPT_API_AVAILABLE = True
