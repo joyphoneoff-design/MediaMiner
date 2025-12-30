@@ -625,7 +625,7 @@ elif page == "📱 小紅書":
                 
                 progress_text.info(f"🔍 多線程解析中 ({len(xhs_urls)} 個連結)...")
                 
-                with ThreadPoolExecutor(max_workers=5) as executor:
+                with ThreadPoolExecutor(max_workers=10) as executor:
                     results = list(executor.map(get_title, enumerate(xhs_urls)))
                 
                 for i, url, title in sorted(results, key=lambda x: x[0]):
