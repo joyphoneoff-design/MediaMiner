@@ -575,70 +575,35 @@ elif page == "📱 小紅書":
             placeholder="例如:\n分享一個很棒的創業心得 https://xhslink.com/xxx\n另一個好內容 https://www.xiaohongshu.com/explore/yyy",
             height=150
         )
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            parse_btn = st.form_submit_button("📋 解析連結", type="secondary")
-        with col2:
-            fetch_titles = st.checkbox("獲取真實標題", value=False, help="較慢但顯示影片真實標題")
+        parse_btn = st.form_submit_button("📋 解析連結", type="secondary")
     
     if parse_btn and raw_text:
-        # 提取 URL
         import re
         import subprocess
+        from concurrent.futures import ThreadPoolExecutor
+        
         url_pattern = re.compile(r'https?://[^\s,;"\'\<\>]+')
         all_urls = url_pattern.findall(raw_text)
-        
-        # 過濾出小紅書相關連結
         xhs_urls = [url for url in all_urls if 'xhslink.com' in url or 'xiaohongshu.com' in url]
         
         if xhs_urls:
-            notes = []
             progress_text = st.empty()
+            progress_text.info(f"🔍 解析中 ({len(xhs_urls)} 個連結)...")
             
-            if fetch_titles:
-                # === 多線程獲取真實標題 ===
-                from concurrent.futures import ThreadPoolExecutor
+            def get_title(args):
+                i, url = args
+                title = None
+                try:
+                    result = subprocess.run(
+                        ["yt-dlp", "--get-title", "--cookies-from-browser", "chrome", url],
+                        capture_output=True, text=True, timeout=20
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        title = result.stdout.strip()[:50]
+                except Exception:
+                    pass
                 
-                def get_title(args):
-                    i, url = args
-                    title = None
-                    try:
-                        result = subprocess.run(
-                            ["yt-dlp", "--get-title", "--cookies-from-browser", "chrome", url],
-                            capture_output=True, text=True, timeout=20
-                        )
-                        if result.returncode == 0 and result.stdout.strip():
-                            title = result.stdout.strip()[:50]
-                    except Exception:
-                        pass
-                    
-                    if not title:
-                        lines = raw_text.split('\n')
-                        for line in lines:
-                            if url in line:
-                                before_url = line.split(url)[0].strip()
-                                if before_url and len(before_url) > 2:
-                                    title = before_url[:50]
-                                    break
-                    
-                    return i, url, title if title else f'小紅書筆記 #{i+1}'
-                
-                progress_text.info(f"🔍 多線程解析中 ({len(xhs_urls)} 個連結)...")
-                
-                with ThreadPoolExecutor(max_workers=10) as executor:
-                    results = list(executor.map(get_title, enumerate(xhs_urls)))
-                
-                for i, url, title in sorted(results, key=lambda x: x[0]):
-                    notes.append({
-                        'title': title,
-                        'url': url,
-                        'note_id': url.split('/')[-1][:10] if '/' in url else f'note_{i}',
-                        'type': 'video'
-                    })
-            else:
-                # === 快速模式：從輸入文字提取或使用編號 ===
-                for i, url in enumerate(xhs_urls):
-                    title = None
+                if not title:
                     lines = raw_text.split('\n')
                     for line in lines:
                         if url in line:
@@ -646,16 +611,20 @@ elif page == "📱 小紅書":
                             if before_url and len(before_url) > 2:
                                 title = before_url[:50]
                                 break
-                    
-                    if not title:
-                        title = f'小紅書筆記 #{i+1}'
-                    
-                    notes.append({
-                        'title': title,
-                        'url': url,
-                        'note_id': url.split('/')[-1][:10] if '/' in url else f'note_{i}',
-                        'type': 'video'
-                    })
+                
+                return i, url, title if title else f'小紅書筆記 #{i+1}'
+            
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                results = list(executor.map(get_title, enumerate(xhs_urls)))
+            
+            notes = []
+            for i, url, title in sorted(results, key=lambda x: x[0]):
+                notes.append({
+                    'title': title,
+                    'url': url,
+                    'note_id': url.split('/')[-1][:10] if '/' in url else f'note_{i}',
+                    'type': 'video'
+                })
             
             progress_text.empty()
             st.session_state.xhs_notes = notes
