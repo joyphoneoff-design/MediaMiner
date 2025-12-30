@@ -171,14 +171,23 @@ class TranscriptFetcher:
             return None
         
         if not audio_file.exists():
-            for ext in ['.mp3', '.m4a', '.webm', '.opus']:
-                alt_file = temp_dir / f"audio{ext}"
+            # 搜索相同 UUID 前綴的其他格式
+            base_name = f"audio_{unique_id}"
+            for ext in ['.mp3', '.m4a', '.webm', '.opus', '.mp4']:
+                alt_file = temp_dir / f"{base_name}{ext}"
                 if alt_file.exists():
                     audio_file = alt_file
                     break
         
         if not audio_file.exists():
-            print("Audio file not found")
+            # 搜索任何最近的音頻檔
+            audio_files = list(temp_dir.glob("audio_*.*"))
+            if audio_files:
+                audio_file = max(audio_files, key=lambda f: f.stat().st_mtime)
+                print(f"⚠️ 找到替代音頻檔: {audio_file.name}")
+        
+        if not audio_file.exists():
+            print("❌ 音頻檔案未找到")
             return None
         
         result = None
