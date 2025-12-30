@@ -354,15 +354,29 @@ class TranscriptFetcher:
                 print(f"✅ 使用 YouTube API 獲取字幕 (語言: {result['language']})")
                 return result
         
-        # 2. 嘗試 yt-dlp
+        # 2. 嘗試 yt-dlp 獲取內嵌字幕
         result = self.fetch_with_ytdlp(video_url)
         if result:
-            print(f"✅ 使用 yt-dlp 獲取字幕 (語言: {result['language']})")
-            return result
+            lang = result.get('language', '')
+            is_chinese = lang.startswith('zh') or lang in ['zh', 'zh-TW', 'zh-CN', 'zh-Hans', 'zh-Hant']
+            
+            # 小紅書內容：優先使用中文字幕，英文字幕則用 Whisper 重新辨識
+            is_xhs = 'xiaohongshu' in video_url or 'xhslink' in video_url
+            
+            if is_chinese:
+                print(f"✅ 使用 yt-dlp 獲取中文字幕 (語言: {lang})")
+                return result
+            elif not is_xhs:
+                # 非小紅書內容，接受任何語言字幕
+                print(f"✅ 使用 yt-dlp 獲取字幕 (語言: {lang})")
+                return result
+            else:
+                # 小紅書內容但只有英文字幕，改用 Whisper 中文辨識
+                print(f"⚠️ 小紅書內容僅有英文字幕 (語言: {lang})，改用 Whisper 中文辨識...")
         
         # 3. Whisper 備用
         if use_whisper_fallback:
-            print(f"⏳ 字幕不可用，使用 Whisper ({whisper_backend}) 進行語音辨識...")
+            print(f"⏳ 使用 Whisper ({whisper_backend}) 進行語音辨識...")
             result = self.fetch_with_whisper(video_url, model=whisper_model, backend=whisper_backend)
             if result:
                 print(f"✅ 使用 {result.get('source', 'Whisper')} 完成語音辨識")
