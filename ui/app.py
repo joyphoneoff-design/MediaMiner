@@ -568,7 +568,55 @@ elif page == "📱 小紅書":
     
     st.divider()
     
-    # ========== 步驟 1: 輸入筆記連結 ==========
+    # ========== 方式 A: 從用戶主頁獲取筆記列表 ==========
+    st.markdown("### 📥 方式 A: 從用戶主頁獲取")
+    
+    with st.form("xhs_profile_form"):
+        profile_url = st.text_input(
+            "輸入小紅書用戶主頁 URL",
+            placeholder="https://www.xiaohongshu.com/user/profile/xxx 或 xhslink.com/xxx",
+            help="支持完整主頁 URL 或分享的短連結"
+        )
+        col_a1, col_a2, col_a3 = st.columns([2, 2, 1])
+        with col_a1:
+            max_notes = st.number_input("最大筆記數", min_value=5, max_value=100, value=20, step=5)
+        with col_a2:
+            fetch_profile_btn = st.form_submit_button("🔍 獲取筆記列表", type="secondary")
+        with col_a3:
+            st.caption("⚠️ 需要登入")
+    
+    if fetch_profile_btn and profile_url:
+        with st.spinner("正在獲取筆記列表..."):
+            from scrapers.xiaohongshu_scraper import XiaohongshuScraper
+            scraper = XiaohongshuScraper()
+            
+            # 嘗試獲取筆記
+            notes = scraper.get_user_notes(profile_url, max_notes=max_notes)
+            
+            if notes:
+                st.session_state.xhs_notes = notes
+                st.session_state.xhs_selected = set(range(len(notes)))
+                st.success(f"✅ 找到 {len(notes)} 個筆記")
+                st.rerun()
+            else:
+                st.warning("""
+                ⚠️ **無法自動獲取筆記列表**
+                
+                小紅書限制了未登入用戶的訪問。請使用以下替代方案:
+                1. 在瀏覽器中登入小紅書
+                2. 訪問用戶主頁，手動複製想要的筆記連結
+                3. 貼到下方「方式 B」的輸入框中
+                """)
+                
+                # 提供快捷按鈕打開主頁
+                import webbrowser
+                if st.button(f"🌐 在瀏覽器中打開主頁"):
+                    webbrowser.open(profile_url)
+    
+    st.divider()
+    
+    # ========== 方式 B: 貼上筆記連結 ==========
+    st.markdown("### 📋 方式 B: 貼上筆記連結")
     with st.form("xhs_url_form"):
         raw_text = st.text_area(
             "貼上包含筆記連結的文字",
