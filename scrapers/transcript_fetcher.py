@@ -269,13 +269,24 @@ class TranscriptFetcher:
             mlx_model = "mlx-community/whisper-large-v3-turbo"
             print(f"⏳ 使用 MLX-Whisper Turbo (GPU 加速) 辨識中...")
             
-            result = mlx_whisper.transcribe(
-                str(audio_file),
-                path_or_hf_repo=mlx_model,
-            )
+            # 根據 URL 判斷語言（小紅書默認中文）
+            force_lang = None
+            if hasattr(self, '_current_url') and self._current_url:
+                if 'xiaohongshu' in self._current_url or 'xhslink' in self._current_url:
+                    force_lang = 'zh'
+                    print(f"   📌 小紅書內容，強制使用中文辨識")
+            
+            transcribe_kwargs = {
+                'audio': str(audio_file),
+                'path_or_hf_repo': mlx_model,
+            }
+            if force_lang:
+                transcribe_kwargs['language'] = force_lang
+            
+            result = mlx_whisper.transcribe(**transcribe_kwargs)
             
             text = result.get("text", "")
-            language = result.get("language", "auto")
+            language = result.get("language", force_lang or "auto")
             
             if text:
                 return {
@@ -330,6 +341,9 @@ class TranscriptFetcher:
         Returns:
             逐字稿資訊
         """
+        # 記錄當前 URL 供 Whisper 語言檢測使用
+        self._current_url = video_url
+        
         # 提取 video_id
         video_id = self._extract_video_id(video_url)
         
