@@ -609,15 +609,22 @@ elif page == "📱 小紅書":
         st.markdown("### 📝 連結列表")
         
         # 全選/清除按鈕
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
-            if st.button("✅ 全選", key="xhs_select_all"):
-                st.session_state.xhs_selected = set(range(len(st.session_state.xhs_notes)))
-                st.rerun()
+            select_all = st.button("✅ 全選", key="xhs_select_all", use_container_width=True)
         with col2:
-            if st.button("❌ 清除選擇", key="xhs_clear_all"):
-                st.session_state.xhs_selected = set()
-                st.rerun()
+            clear_all = st.button("❌ 清除", key="xhs_clear_all", use_container_width=True)
+        with col3:
+            st.caption(f"已選: {len(st.session_state.xhs_selected)}/{len(st.session_state.xhs_notes)}")
+        
+        # 處理按鈕點擊
+        if select_all:
+            for i in range(len(st.session_state.xhs_notes)):
+                st.session_state.xhs_selected.add(i)
+            st.rerun()
+        if clear_all:
+            st.session_state.xhs_selected.clear()
+            st.rerun()
         
         # 顯示連結列表
         for idx, note in enumerate(st.session_state.xhs_notes):
@@ -696,8 +703,8 @@ elif page == "📱 小紅書":
                         )
                         
                         if transcript:
-                            # 提取知識
-                            knowledge = extractor.process_transcript(
+                            # 提取知識 (返回 Dict，需要轉為字符串)
+                            knowledge_result = extractor.process_transcript(
                                 transcript['text'],
                                 video_info={
                                     'title': note['title'],
@@ -706,13 +713,16 @@ elif page == "📱 小紅書":
                                 }
                             )
                             
+                            # 將知識 dict 轉為字符串
+                            knowledge_str = knowledge_result.get('knowledge', '') if isinstance(knowledge_result, dict) else str(knowledge_result)
+                            
                             # 生成 MD
                             filename = injector.generate_safe_filename(note['title'])
                             output_file = output_dir / f"{filename}.md"
                             
                             md_content = injector.create_markdown(
                                 content=transcript.get('text', ''),
-                                knowledge=knowledge,
+                                knowledge=knowledge_str,
                                 video_info={
                                     'title': note['title'],
                                     'url': note['url'],
