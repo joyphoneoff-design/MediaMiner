@@ -626,19 +626,33 @@ elif page == "📱 小紅書":
             st.session_state.xhs_selected.clear()
             st.rerun()
         
-        # 顯示連結列表
-        for idx, note in enumerate(st.session_state.xhs_notes):
-            checked = st.checkbox(
-                f"**{note['title']}** - `{note['url'][:50]}...`",
-                value=idx in st.session_state.xhs_selected,
-                key=f"xhs_note_{idx}"
-            )
-            if checked and idx not in st.session_state.xhs_selected:
+        # 顯示連結列表 - 使用 callback 確保狀態同步
+        def toggle_selection(idx):
+            if idx in st.session_state.xhs_selected:
+                st.session_state.xhs_selected.discard(idx)
+            else:
                 st.session_state.xhs_selected.add(idx)
-            elif not checked and idx in st.session_state.xhs_selected:
+        
+        for idx, note in enumerate(st.session_state.xhs_notes):
+            checkbox_key = f"xhs_note_{idx}"
+            # 初始化 checkbox 狀態
+            if checkbox_key not in st.session_state:
+                st.session_state[checkbox_key] = idx in st.session_state.xhs_selected
+            
+            # 同步 checkbox 狀態到 xhs_selected
+            is_selected = st.checkbox(
+                f"**{note['title']}** - `{note['url'][:50]}...`",
+                key=checkbox_key,
+                value=idx in st.session_state.xhs_selected
+            )
+            
+            # 即時同步勾選狀態
+            if is_selected:
+                st.session_state.xhs_selected.add(idx)
+            else:
                 st.session_state.xhs_selected.discard(idx)
         
-        st.markdown(f"**已選擇: {len(st.session_state.xhs_selected)}/{len(st.session_state.xhs_notes)}**")
+        st.caption(f"**已選擇: {len(st.session_state.xhs_selected)}/{len(st.session_state.xhs_notes)}**")
         
         st.divider()
         
