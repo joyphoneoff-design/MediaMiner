@@ -512,23 +512,18 @@ if page == "📺 頻道擷取":
                 # 計算執行統計
                 elapsed_time = time.time() - start_time
                 success_count = sum(1 for r in results if r['success'])
-                skipped_count = sum(1 for r in results if r.get('skipped'))
-                new_count = success_count - skipped_count
+                fail_count = len(results) - success_count
                 
                 progress_bar.progress(100, text="✅ 完成!")
                 
-                # 顯示統計指標
+                # 顯示統計指標 (簡化版，因為不再跳過任何檔案)
                 with metrics_placeholder.container():
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.metric("✅ 成功", success_count)
+                        st.metric("✅ 成功", f"{success_count}/{len(results)}")
                     with col2:
-                        st.metric("🆕 新增", new_count)
+                        st.metric("❌ 失敗", fail_count)
                     with col3:
-                        st.metric("⏭️ 跳過", skipped_count, help="已存在的檔案")
-                    with col4:
-                        st.metric("❌ 失敗", len(results) - success_count)
-                    with col5:
                         st.metric("⏱️ 耗時", f"{elapsed_time:.1f}s")
                     
                     # 顯示錯誤分布
