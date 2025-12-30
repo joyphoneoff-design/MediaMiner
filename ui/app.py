@@ -369,11 +369,8 @@ if page == "📺 頻道擷取":
             )
         with col3:
             if whisper_backend == "mlx":
-                whisper_model = st.selectbox(
-                    "Whisper 模型",
-                    options=["small", "medium", "base", "tiny"],
-                    help="small = 80/20 平衡"
-                )
+                whisper_model = "large-v3-turbo"
+                st.info("📌 使用 Turbo 模型 (MLX GPU)")
             else:
                 whisper_model = "large-v3-turbo"
                 st.info("📌 使用 turbo 模型")

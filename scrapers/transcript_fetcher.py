@@ -260,15 +260,18 @@ class TranscriptFetcher:
             print(f"OpenAI Whisper error: {e}")
         return None
     
-    def _whisper_mlx(self, audio_file: Path, model: str = "small") -> Optional[Dict]:
-        """使用 MLX-Whisper (Apple Silicon GPU 加速)"""
+    def _whisper_mlx(self, audio_file: Path, model: str = "large-v3-turbo") -> Optional[Dict]:
+        """使用 MLX-Whisper Turbo (Apple Silicon GPU 加速)"""
         try:
             import mlx_whisper
             
-            print(f"⏳ 使用 MLX-Whisper ({model}) GPU 加速辨識中...")
+            # 統一使用 Turbo 模型 (最佳性價比)
+            mlx_model = "mlx-community/whisper-large-v3-turbo"
+            print(f"⏳ 使用 MLX-Whisper Turbo (GPU 加速) 辨識中...")
+            
             result = mlx_whisper.transcribe(
                 str(audio_file),
-                path_or_hf_repo=f"mlx-community/whisper-{model}-mlx",
+                path_or_hf_repo=mlx_model,
             )
             
             text = result.get("text", "")
@@ -279,7 +282,7 @@ class TranscriptFetcher:
                     'text': text,
                     'language': language,
                     'source': 'mlx-whisper',
-                    'model': model
+                    'model': 'large-v3-turbo'
                 }
                 
         except ImportError:
