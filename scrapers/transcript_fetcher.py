@@ -155,16 +155,19 @@ class TranscriptFetcher:
             "--audio-quality", "5",  # 較低音質 (~64kbps)，足夠辨識
             "-o", str(audio_file),
             "--cookies-from-browser", "chrome",
+            "--no-warnings",
             video_url
         ]
         
+        print(f"⏳ 下載音頻中...")
         try:
-            subprocess.run(cmd, capture_output=True, check=True, timeout=120)
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to download audio: {e}")
-            return None
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # 5分鐘超時
+            if result.returncode != 0:
+                error_msg = result.stderr[:200] if result.stderr else "未知錯誤"
+                print(f"❌ 音頻下載失敗: {error_msg}")
+                return None
         except subprocess.TimeoutExpired:
-            print("Audio download timeout")
+            print("❌ 音頻下載超時 (>5分鐘)")
             return None
         
         if not audio_file.exists():
