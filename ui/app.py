@@ -675,6 +675,7 @@ elif page == "📱 小紅書":
             metrics_placeholder = st.empty()
             
             results = []
+            import time
             start_time = time.time()
             
             try:
