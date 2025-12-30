@@ -761,9 +761,18 @@ elif page == "📱 小紅書":
                     st.success(f"🎉 完成! 成功處理 {success_count}/{len(selected_notes)} 個筆記")
                 else:
                     st.warning("⚠️ 處理失敗。小紅書筆記可能是純圖片，無法提取語音逐字稿。")
+                
+                # 顯示失敗詳情
+                failed_results = [r for r in results if not r['success']]
+                if failed_results:
+                    with st.expander("📋 失敗詳情", expanded=True):
+                        for r in failed_results:
+                            st.error(f"**{r['note']['title']}**: {r.get('error', '未知錯誤')}")
                     
             except Exception as e:
                 st.error(f"❌ 發生錯誤: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc(), language="text")
             finally:
                 st.session_state.processing = False
 
