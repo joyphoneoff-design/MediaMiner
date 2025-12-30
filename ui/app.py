@@ -609,13 +609,11 @@ elif page == "📱 小紅書":
         st.markdown("### 📝 連結列表")
         
         # 全選/清除按鈕
-        col1, col2, col3 = st.columns([1, 1, 2])
+        col1, col2 = st.columns(2)
         with col1:
             select_all = st.button("✅ 全選", key="xhs_select_all", use_container_width=True)
         with col2:
             clear_all = st.button("❌ 清除", key="xhs_clear_all", use_container_width=True)
-        with col3:
-            st.caption(f"已選: {len(st.session_state.xhs_selected)}/{len(st.session_state.xhs_notes)}")
         
         # 處理按鈕點擊
         if select_all:
