@@ -206,9 +206,20 @@ if page == "📺 頻道擷取":
             
             if videos:
                 st.session_state.channel_videos = videos
-                st.session_state.selected_videos = set(range(len(videos)))  # 預設全選
+                
+                # 預設僅選擇未處理的影片 (Smart Select)
+                from processors.metadata_injector import MetadataInjector
+                temp_injector = MetadataInjector()
+                temp_output_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
+                unprocessed_indices = set()
+                for idx, video in enumerate(videos):
+                    filename = temp_injector.generate_safe_filename(video['title'])
+                    if not (temp_output_dir / f"{filename}.md").exists():
+                        unprocessed_indices.add(idx)
+                
+                st.session_state.selected_videos = unprocessed_indices  # 僅選擇未處理
                 st.session_state.fetch_complete = True
-                st.success(f"✅ 找到 {len(videos)} 部影片")
+                st.success(f"✅ 找到 {len(videos)} 部影片 (🆕 {len(unprocessed_indices)} 部未處理)")
             else:
                 st.error("❌ 無法獲取影片列表，請確認 URL 格式正確")
         
@@ -432,21 +443,11 @@ if page == "📺 頻道擷取":
                         progress = int((video_idx / len(selected_videos)) * 100)
                         progress_bar.progress(progress, text=f"處理: {video_idx}/{len(selected_videos)} - {video['title'][:30]}...")
                         
-                        # 檢查是否已處理過 (跳過重複)
+                        # 生成檔案名 (用於儲存)
                         filename = injector.generate_safe_filename(video['title'])
                         output_file = output_dir / f"{filename}.md"
                         
-                        if output_file.exists():
-                            results.append({
-                                'video': video, 
-                                'success': True, 
-                                'file': str(output_file),
-                                'source': 'cached',
-                                'skipped': True
-                            })
-                            st.session_state.processed_count += 1
-                            update_sidebar_stats()  # 即時更新側邊欄
-                            continue  # 跳過已處理的影片
+                        # 不跳過任何檔案，全部重新處理
                         
                         try:
                             # 獲取逐字稿 (使用選定的 Whisper 後端)
