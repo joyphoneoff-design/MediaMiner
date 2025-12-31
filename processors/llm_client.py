@@ -95,7 +95,34 @@ class LLMClient:
         """重置限速追蹤（新批次開始時）"""
         self._rate_limit_count = 0
         self._recommended_workers = 10
-        
+    
+    def _auto_start_lmstudio(self, model: str) -> bool:
+        """自動啟動 LM Studio 伺服器並載入模型"""
+        import subprocess
+        try:
+            # 啟動伺服器
+            print(f"   🚀 啟動 LM Studio 伺服器...")
+            subprocess.run(["lms", "server", "start"], 
+                          capture_output=True, timeout=10)
+            time.sleep(2)
+            
+            # 載入模型
+            print(f"   📥 載入模型 {model}...")
+            result = subprocess.run(
+                ["lms", "load", model, "--yes"],
+                capture_output=True, timeout=60
+            )
+            
+            if result.returncode == 0:
+                print(f"   ✅ LM Studio 啟動成功!")
+                time.sleep(2)  # 等待模型完全載入
+                return True
+            else:
+                print(f"   ❌ 模型載入失敗")
+                return False
+        except Exception as e:
+            print(f"   ❌ LM Studio 啟動失敗: {e}")
+            return False
     def _get_gemini_client(self, api_key: str):
         """初始化 Gemini 客戶端"""
         try:
@@ -163,11 +190,24 @@ class LLMClient:
                 return self._call_gemini(api_key, model, prompt, 
                                         system_prompt, max_tokens, temperature)
             elif name == "lmstudio":
-                return self._call_openai_compatible(
-                    provider.get("base_url", "http://localhost:1234/v1"),
-                    "lm-studio", model, prompt, system_prompt, 
-                    max_tokens, temperature
-                )
+                try:
+                    return self._call_openai_compatible(
+                        provider.get("base_url", "http://localhost:1234/v1"),
+                        "lm-studio", model, prompt, system_prompt, 
+                        max_tokens, temperature
+                    )
+                except Exception as lm_err:
+                    if "Connection" in str(lm_err) or "refused" in str(lm_err).lower():
+                        # 嘗試自動啟動 LM Studio
+                        print(f"   🔧 嘗試自動啟動 LM Studio...")
+                        if self._auto_start_lmstudio(model):
+                            # 重試一次
+                            return self._call_openai_compatible(
+                                provider.get("base_url", "http://localhost:1234/v1"),
+                                "lm-studio", model, prompt, system_prompt, 
+                                max_tokens, temperature
+                            )
+                    raise lm_err
             else:
                 return self._call_openai_compatible(
                     provider.get("base_url", "https://api.openai.com/v1"),
