@@ -365,7 +365,7 @@ if page == "📺 頻道擷取":
         # 處理設定 - 第一行
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            batch_size = st.slider("批次大小", min_value=1, max_value=10, value=5, 
+            batch_size = st.slider("批次大小", min_value=1, max_value=10, value=10, 
                                    help="每批處理的影片數量")
         with col2:
             whisper_backend = st.selectbox(
@@ -387,7 +387,7 @@ if page == "📺 頻道擷取":
                 st.info("📌 使用 turbo 模型")
         with col4:
             if whisper_backend in ["groq", "openai"]:
-                api_workers = st.slider("API 並行", min_value=1, max_value=10, value=5,
+                api_workers = st.slider("API 並行", min_value=1, max_value=10, value=10,
                                        help="Groq: 30 req/min，建議 5-7 | 10 可能觸發限速")
             else:
                 api_workers = 1
