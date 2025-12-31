@@ -145,6 +145,10 @@ class LLMClient:
                 )
         except Exception as e:
             print(f"   ⚠️ {name} 失敗: {e}")
+            # 429 限速時等待 2 秒再嘗試下一個提供商
+            if "429" in str(e) or "rate limit" in str(e).lower():
+                print(f"   ⏳ 等待 2 秒...")
+                time.sleep(2)
             return None
     
     def _call_gemini(self, api_key: str, model: str, prompt: str,
