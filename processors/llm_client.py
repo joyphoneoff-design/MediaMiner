@@ -64,6 +64,37 @@ class LLMClient:
         self.current_provider = None
         self.retry_count = 0
         self.max_retries = 3
+        # 智能限速追蹤
+        self._rate_limit_count = 0
+        self._last_rate_limit_time = 0
+        self._recommended_workers = 10  # 預設最大
+        
+    def record_rate_limit(self):
+        """記錄 429 限速事件"""
+        import time
+        current_time = time.time()
+        # 1 分鐘內的限速事件才計數
+        if current_time - self._last_rate_limit_time > 60:
+            self._rate_limit_count = 0
+        self._rate_limit_count += 1
+        self._last_rate_limit_time = current_time
+        
+        # 根據限速頻率調整建議並行數
+        if self._rate_limit_count >= 5:
+            self._recommended_workers = max(2, self._recommended_workers - 2)
+            print(f"   🔽 建議降低 API 並行數至 {self._recommended_workers}")
+        elif self._rate_limit_count >= 3:
+            self._recommended_workers = max(3, self._recommended_workers - 1)
+            print(f"   🔽 建議降低 API 並行數至 {self._recommended_workers}")
+    
+    def get_recommended_workers(self) -> int:
+        """獲取建議的並行數"""
+        return self._recommended_workers
+    
+    def reset_rate_limit_tracking(self):
+        """重置限速追蹤（新批次開始時）"""
+        self._rate_limit_count = 0
+        self._recommended_workers = 10
         
     def _get_gemini_client(self, api_key: str):
         """初始化 Gemini 客戶端"""
@@ -145,8 +176,9 @@ class LLMClient:
                 )
         except Exception as e:
             print(f"   ⚠️ {name} 失敗: {e}")
-            # 429 限速時等待 2 秒再嘗試下一個提供商
+            # 429 限速時記錄並等待
             if "429" in str(e) or "rate limit" in str(e).lower():
+                self.record_rate_limit()
                 print(f"   ⏳ 等待 2 秒...")
                 time.sleep(2)
             return None
