@@ -49,7 +49,7 @@ class LLMClient:
         {
             "name": "lmstudio",
             "priority": 5,
-            "model": "qwen3-30b-a3b",
+            "model": "qwen/qwen3-30b-a3b-2507",
             "base_url": "http://localhost:1234/v1"
         },
         {
