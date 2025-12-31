@@ -438,23 +438,20 @@ if page == "📺 頻道擷取":
                     extractor = KnowledgeExtractor()
                     injector = MetadataInjector()
                     
-                    for i, video in enumerate(batch_videos):
-                        video_idx = batch_start + i + 1
-                        progress = int((video_idx / len(selected_videos)) * 100)
-                        progress_bar.progress(progress, text=f"處理: {video_idx}/{len(selected_videos)} - {video['title'][:30]}...")
-                        
-                        # 生成檔案名 (用於儲存)
-                        filename = injector.generate_safe_filename(video['title'])
-                        output_file = output_dir / f"{filename}.md"
-                        
-                        # 不跳過任何檔案，全部重新處理
+                    # 定義單個影片處理函數
+                    def process_single_video(args):
+                        video_idx, video = args
+                        result = {'video': video, 'success': False, 'error': None}
                         
                         try:
-                            # 獲取逐字稿 (使用選定的 Whisper 後端)
+                            filename = injector.generate_safe_filename(video['title'])
+                            output_file = output_dir / f"{filename}.md"
+                            
+                            # 獲取逐字稿
                             transcript = fetcher.fetch(
                                 video['url'],
                                 whisper_backend=st.session_state.get('whisper_backend', 'mlx'),
-                                whisper_model=st.session_state.get('whisper_model', 'small')
+                                whisper_model=st.session_state.get('whisper_model', 'large-v3-turbo')
                             )
                             
                             if transcript:
@@ -481,25 +478,63 @@ if page == "📺 頻道擷取":
                                     }
                                 )
                                 
-                                # 保存 (filename 和 output_file 已在前面定義)
                                 output_file.write_text(md_content, encoding='utf-8')
-                                
-                                results.append({
+                                result = {
                                     'video': video, 
                                     'success': True, 
                                     'file': str(output_file),
                                     'source': transcript.get('source', 'unknown')
-                                })
-                                st.session_state.processed_count += 1
-                                update_sidebar_stats()  # 即時更新側邊欄
+                                }
                             else:
-                                results.append({'video': video, 'success': False, 'error': '無法獲取字幕'})
-                                error_types['無法獲取字幕'] = error_types.get('無法獲取字幕', 0) + 1
-                        
+                                result['error'] = '無法獲取字幕'
                         except Exception as e:
-                            error_msg = str(e)[:50]
-                            results.append({'video': video, 'success': False, 'error': error_msg})
-                            error_types[error_msg] = error_types.get(error_msg, 0) + 1
+                            result['error'] = str(e)[:50]
+                        
+                        return video_idx, result
+                    
+                    # 根據後端選擇處理方式
+                    if whisper_backend in ['groq', 'openai'] and api_workers > 1:
+                        # === API 後端：多線程並行處理 ===
+                        from concurrent.futures import ThreadPoolExecutor, as_completed
+                        
+                        status_container.info(f"📦 批次 {batch_idx + 1}/{total_batches} - 多線程處理 ({api_workers} workers)")
+                        
+                        with ThreadPoolExecutor(max_workers=api_workers) as executor:
+                            futures = {
+                                executor.submit(process_single_video, (batch_start + i, video)): i 
+                                for i, video in enumerate(batch_videos)
+                            }
+                            
+                            for future in as_completed(futures):
+                                video_idx, result = future.result()
+                                results.append(result)
+                                
+                                if result['success']:
+                                    st.session_state.processed_count += 1
+                                else:
+                                    error_msg = result.get('error', '未知錯誤')
+                                    error_types[error_msg] = error_types.get(error_msg, 0) + 1
+                                
+                                # 更新進度
+                                progress = int((len(results) / len(selected_videos)) * 100)
+                                progress_bar.progress(progress, text=f"處理: {len(results)}/{len(selected_videos)}")
+                    else:
+                        # === MLX 後端：串行處理（優化 GPU 使用） ===
+                        for i, video in enumerate(batch_videos):
+                            video_idx = batch_start + i + 1
+                            progress = int((video_idx / len(selected_videos)) * 100)
+                            progress_bar.progress(progress, text=f"處理: {video_idx}/{len(selected_videos)} - {video['title'][:30]}...")
+                            
+                            _, result = process_single_video((batch_start + i, video))
+                            results.append(result)
+                            
+                            if result['success']:
+                                st.session_state.processed_count += 1
+                            else:
+                                error_msg = result.get('error', '未知錯誤')
+                                error_types[error_msg] = error_types.get(error_msg, 0) + 1
+                        
+                        update_sidebar_stats()
                     
                     # 批次完成後清理記憶體
                     del fetcher, extractor, injector
