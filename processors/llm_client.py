@@ -20,24 +20,24 @@ class LLMClient:
     
     PROVIDERS = [
         {
-            "name": "gemini",
+            "name": "cerebras",
             "priority": 1,
-            "model": "gemini-2.5-flash-lite",
-            "env_keys": ["GEMINI_API_KEY", "GEMINI_API_KEY_BACKUP"]
+            "model": "qwen-3-235b-a22b-instruct-2507",  # Qwen 235B - 免費穩定
+            "env_keys": ["CEREBRAS_API_KEY"],
+            "base_url": "https://api.cerebras.ai/v1"
         },
         {
             "name": "openrouter",
             "priority": 2,
-            "model": "google/gemini-2.0-flash-exp:free",
+            "model": "google/gemini-2.0-flash-exp:free",  # 16 req/min 限制
             "env_keys": ["OPENROUTER_API_KEY"],
             "base_url": "https://openrouter.ai/api/v1"
         },
         {
-            "name": "cerebras",
+            "name": "gemini",
             "priority": 3,
-            "model": "qwen-3-235b-a22b-instruct-2507",  # Qwen 235B
-            "env_keys": ["CEREBRAS_API_KEY"],
-            "base_url": "https://api.cerebras.ai/v1"
+            "model": "gemini-2.5-flash-lite",  # API key 需更新
+            "env_keys": ["GEMINI_API_KEY", "GEMINI_API_KEY_BACKUP"]
         },
         {
             "name": "cerebras_glm",
