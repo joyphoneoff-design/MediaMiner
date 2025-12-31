@@ -387,8 +387,8 @@ if page == "📺 頻道擷取":
                 st.info("📌 使用 turbo 模型")
         with col4:
             if whisper_backend in ["groq", "openai"]:
-                api_workers = st.slider("API 並行", min_value=1, max_value=5, value=4,
-                                       help="Groq 免費額度限制 30 req/min，建議 4 workers")
+                api_workers = st.slider("API 並行", min_value=1, max_value=10, value=5,
+                                       help="Groq: 30 req/min，建議 5-7 | 10 可能觸發限速")
             else:
                 api_workers = 1
                 st.caption("本地處理")
