@@ -36,27 +36,52 @@ class KnowledgeExtractor:
             return prompt_file.read_text(encoding='utf-8')
         return ""
     
-    def identify_speakers(self, transcript: str) -> str:
+    def identify_speakers(self, transcript: str, video_info: Dict = None) -> str:
         """
-        識別講者
+        識別講者（使用影片元數據輔助識別）
         
         Args:
             transcript: 原始逐字稿
+            video_info: 影片資訊 {'title', 'channel', 'description'}
             
         Returns:
             標記講者後的逐字稿
         """
+        # 從影片元數據提取講者資訊
+        speaker_hints = ""
+        if video_info:
+            channel = video_info.get('channel', '')
+            title = video_info.get('title', '')
+            description = video_info.get('description', '')[:500] if video_info.get('description') else ''
+            
+            speaker_hints = f"""
+## 已知講者資訊（請優先使用）
+
+- **頻道主持人/主講者**: {channel}
+- **影片標題**: {title}
+- **描述摘要**: {description[:200] if description else '無'}
+
+### 識別規則
+1. 若為單人影片（Vlog、教學），主講者為頻道擁有者「{channel}」
+2. 若為訪談，主持人通常是頻道擁有者「{channel}」
+3. 訪談嘉賓姓名可能出現在標題或描述中
+4. **禁止使用虛構或佔位符姓名**（如 Cortex、張三等）
+5. 無法識別時用「主講者」或「嘉賓」代替
+"""
+
         prompt = f"""
 {self.speaker_prompt}
 
+{speaker_hints}
+
 ## 待分析逐字稿
 
-{transcript[:8000]}  # 限制長度避免超出 token
+{transcript[:8000]}
 """
         
         result = self.llm.generate(
             prompt=prompt,
-            system_prompt="你是專業的語音分析師，請識別對話中的不同講者。",
+            system_prompt=f"你是專業的語音分析師。此影片來自頻道「{video_info.get('channel', '未知')}」，請識別對話中的不同講者。",
             max_tokens=8000,
             temperature=0.3
         )
@@ -178,9 +203,9 @@ class KnowledgeExtractor:
         """
         print("🔍 開始處理逐字稿...")
         
-        # 1. 識別講者
+        # 1. 識別講者（使用影片元數據輔助）
         print("   👥 識別講者...")
-        marked_transcript = self.identify_speakers(transcript)
+        marked_transcript = self.identify_speakers(transcript, video_info)
         
         # 2. 提取知識
         print("   📚 提取商業知識...")
