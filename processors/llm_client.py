@@ -22,28 +22,28 @@ class LLMClient:
         {
             "name": "cerebras",
             "priority": 1,
-            "model": "qwen-3-235b-a22b-instruct-2507",  # Qwen 235B - 免費穩定
-            "env_keys": ["CEREBRAS_API_KEY"],
+            "model": "qwen-3-235b-a22b-instruct-2507",
+            "env_keys": ["CEREBRAS_API_KEY_1", "CEREBRAS_API_KEY_2", "CEREBRAS_API_KEY_3"],  # 3 帳號輪換
             "base_url": "https://api.cerebras.ai/v1"
         },
         {
-            "name": "openrouter",
+            "name": "gemini",
             "priority": 2,
-            "model": "google/gemini-2.0-flash-exp:free",  # 16 req/min 限制
+            "model": "gemini-2.5-flash-lite",
+            "env_keys": ["GEMINI_API_KEY_1", "GEMINI_API_KEY_2"],  # 2 帳號輪換
+        },
+        {
+            "name": "openrouter",
+            "priority": 3,
+            "model": "google/gemini-2.0-flash-exp:free",
             "env_keys": ["OPENROUTER_API_KEY"],
             "base_url": "https://openrouter.ai/api/v1"
         },
         {
-            "name": "gemini",
-            "priority": 3,
-            "model": "gemini-2.5-flash-lite",  # API key 需更新
-            "env_keys": ["GEMINI_API_KEY", "GEMINI_API_KEY_BACKUP"]
-        },
-        {
             "name": "cerebras_glm",
             "priority": 4,
-            "model": "zai-glm-4.6",  # GLM 4.6 備用
-            "env_keys": ["CEREBRAS_API_KEY"],
+            "model": "zai-glm-4.6",
+            "env_keys": ["CEREBRAS_API_KEY_1", "CEREBRAS_API_KEY_2", "CEREBRAS_API_KEY_3"],  # 共用 keys
             "base_url": "https://api.cerebras.ai/v1"
         },
         {
@@ -168,60 +168,69 @@ class LLMClient:
     def _try_provider(self, provider: Dict, prompt: str, 
                       system_prompt: str, max_tokens: int, 
                       temperature: float) -> Optional[str]:
-        """嘗試單個提供商"""
+        """嘗試單個提供商（支援多帳號輪換）"""
         name = provider["name"]
         model = provider["model"]
         
-        # 獲取 API 密鑰
-        api_key = None
+        # 獲取 API 密鑰列表（支援多帳號輪換）
+        api_keys = []
         if "env_keys" in provider:
             for key_name in provider["env_keys"]:
-                api_key = os.getenv(key_name)
-                if api_key:
-                    break
+                key = os.getenv(key_name)
+                if key:
+                    api_keys.append(key)
         
-        if name != "lmstudio" and not api_key:
+        if name != "lmstudio" and not api_keys:
             return None
         
-        print(f"🔄 嘗試 {name} ({model})...")
-        
-        try:
-            if name == "gemini":
-                return self._call_gemini(api_key, model, prompt, 
-                                        system_prompt, max_tokens, temperature)
-            elif name == "lmstudio":
-                try:
-                    return self._call_openai_compatible(
-                        provider.get("base_url", "http://localhost:1234/v1"),
-                        "lm-studio", model, prompt, system_prompt, 
+        # 嘗試每個 API key
+        for key_idx, api_key in enumerate(api_keys if api_keys else [None]):
+            key_suffix = f" [帳號 {key_idx + 1}/{len(api_keys)}]" if len(api_keys) > 1 else ""
+            print(f"🔄 嘗試 {name} ({model}){key_suffix}...")
+            
+            try:
+                if name == "gemini":
+                    result = self._call_gemini(api_key, model, prompt, 
+                                            system_prompt, max_tokens, temperature)
+                    if result:
+                        return result
+                elif name == "lmstudio":
+                    try:
+                        return self._call_openai_compatible(
+                            provider.get("base_url", "http://localhost:1234/v1"),
+                            "lm-studio", model, prompt, system_prompt, 
+                            max_tokens, temperature
+                        )
+                    except Exception as lm_err:
+                        if "Connection" in str(lm_err) or "refused" in str(lm_err).lower():
+                            print(f"   🔧 嘗試自動啟動 LM Studio...")
+                            if self._auto_start_lmstudio(model):
+                                return self._call_openai_compatible(
+                                    provider.get("base_url", "http://localhost:1234/v1"),
+                                    "lm-studio", model, prompt, system_prompt, 
+                                    max_tokens, temperature
+                                )
+                        raise lm_err
+                else:
+                    result = self._call_openai_compatible(
+                        provider.get("base_url", "https://api.openai.com/v1"),
+                        api_key, model, prompt, system_prompt,
                         max_tokens, temperature
                     )
-                except Exception as lm_err:
-                    if "Connection" in str(lm_err) or "refused" in str(lm_err).lower():
-                        # 嘗試自動啟動 LM Studio
-                        print(f"   🔧 嘗試自動啟動 LM Studio...")
-                        if self._auto_start_lmstudio(model):
-                            # 重試一次
-                            return self._call_openai_compatible(
-                                provider.get("base_url", "http://localhost:1234/v1"),
-                                "lm-studio", model, prompt, system_prompt, 
-                                max_tokens, temperature
-                            )
-                    raise lm_err
-            else:
-                return self._call_openai_compatible(
-                    provider.get("base_url", "https://api.openai.com/v1"),
-                    api_key, model, prompt, system_prompt,
-                    max_tokens, temperature
-                )
-        except Exception as e:
-            print(f"   ⚠️ {name} 失敗: {e}")
-            # 429 限速時記錄並等待
-            if "429" in str(e) or "rate limit" in str(e).lower():
-                self.record_rate_limit()
-                print(f"   ⏳ 等待 2 秒...")
-                time.sleep(2)
-            return None
+                    if result:
+                        return result
+            except Exception as e:
+                print(f"   ⚠️ {name} 失敗: {e}")
+                # 429 限速時記錄並等待，然後嘗試下一個 key
+                if "429" in str(e) or "rate limit" in str(e).lower() or "quota" in str(e).lower():
+                    self.record_rate_limit()
+                    print(f"   ⏳ 等待 2 秒後嘗試下一個帳號...")
+                    time.sleep(2)
+                    continue  # 嘗試下一個 key
+                # 其他錯誤也嘗試下一個 key
+                continue
+        
+        return None  # 所有 keys 都失敗
     
     def _call_gemini(self, api_key: str, model: str, prompt: str,
                      system_prompt: str, max_tokens: int, 
