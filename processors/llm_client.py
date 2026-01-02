@@ -23,7 +23,7 @@ class LLMClient:
             "name": "cerebras",
             "priority": 1,
             "model": "qwen-3-235b-a22b-instruct-2507",
-            "env_keys": ["CEREBRAS_API_KEY_1", "CEREBRAS_API_KEY_2", "CEREBRAS_API_KEY_3"],  # 3 帳號輪換
+            "env_keys": ["CEREBRAS_API_KEY_1", "CEREBRAS_API_KEY_2", "CEREBRAS_API_KEY_3", "CEREBRAS_API_KEY_4"],  # 4 帳號輪換
             "base_url": "https://api.cerebras.ai/v1"
         },
         {
@@ -40,21 +40,14 @@ class LLMClient:
             "base_url": "https://openrouter.ai/api/v1"
         },
         {
-            "name": "cerebras_glm",
-            "priority": 4,
-            "model": "zai-glm-4.6",
-            "env_keys": ["CEREBRAS_API_KEY_1", "CEREBRAS_API_KEY_2", "CEREBRAS_API_KEY_3"],  # 共用 keys
-            "base_url": "https://api.cerebras.ai/v1"
-        },
-        {
             "name": "lmstudio",
-            "priority": 5,
+            "priority": 4,
             "model": "qwen/qwen3-30b-a3b-2507",
             "base_url": "http://localhost:1234/v1"
         },
         {
             "name": "openai",
-            "priority": 6,
+            "priority": 5,
             "model": "gpt-4o-mini",
             "env_keys": ["OPENAI_API_KEY"]
         }

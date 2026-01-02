@@ -111,11 +111,9 @@ with st.sidebar:
     # 狀態卡片
     st.markdown("### 📈 統計")
     
-    # 使用 empty container 支援即時更新
-    stats_container = st.empty()
-    
-    def calculate_and_display_stats():
-        """計算並顯示統計（可在處理中調用）"""
+    # 初始化 session_state 中的統計值
+    def refresh_stats():
+        """刷新統計值到 session_state"""
         try:
             processed_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
             if processed_dir.exists():
@@ -134,20 +132,23 @@ with st.sidebar:
             file_count = 0
             today_count = 0
         
-        with stats_container.container():
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("已處理", file_count)
-            with col2:
-                st.metric("今日", today_count)
-        
+        st.session_state.stats_total = file_count
+        st.session_state.stats_today = today_count
         return file_count, today_count
     
-    # 初始化顯示
-    calculate_and_display_stats()
+    # 初始化或刷新統計
+    if 'stats_total' not in st.session_state:
+        refresh_stats()
     
-    # 存儲函數到 session_state 供處理迴圈調用
-    st.session_state.update_sidebar_stats = calculate_and_display_stats
+    # 顯示統計（從 session_state 讀取）
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("已處理", st.session_state.get('stats_total', 0))
+    with col2:
+        st.metric("今日", st.session_state.get('stats_today', 0))
+    
+    # 存儲刷新函數供處理迴圈調用（每次成功後 refresh + rerun）
+    st.session_state.refresh_sidebar_stats = refresh_stats
     
     st.divider()
     
@@ -539,8 +540,8 @@ if page == "📺 頻道擷取":
                                 error_msg = result.get('error', '未知錯誤')
                                 error_types[error_msg] = error_types.get(error_msg, 0) + 1
                         
-                        if hasattr(st.session_state, 'update_sidebar_stats'):
-                            st.session_state.update_sidebar_stats()
+                        if hasattr(st.session_state, 'refresh_sidebar_stats'):
+                            st.session_state.refresh_sidebar_stats()
                     
                     # 批次完成後清理記憶體
                     del fetcher, extractor, injector
@@ -982,8 +983,8 @@ elif page == "📱 小紅書":
                             
                             results.append(result)
                             if result['success']:
-                                if hasattr(st.session_state, 'update_sidebar_stats'):
-                                    st.session_state.update_sidebar_stats()
+                                if hasattr(st.session_state, 'refresh_sidebar_stats'):
+                                    st.session_state.refresh_sidebar_stats()
                 else:
                     # 串行處理
                     for i, note in enumerate(selected_notes):
@@ -1003,8 +1004,8 @@ elif page == "📱 小紅書":
                         
                         results.append(result)
                         if result['success']:
-                            if hasattr(st.session_state, 'update_sidebar_stats'):
-                                st.session_state.update_sidebar_stats()
+                            if hasattr(st.session_state, 'refresh_sidebar_stats'):
+                                st.session_state.refresh_sidebar_stats()
                 
                 status_placeholder.empty()
                 
