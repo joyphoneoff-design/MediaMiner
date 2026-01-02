@@ -115,24 +115,34 @@ with st.sidebar:
     
     def update_sidebar_stats(total_override=None, today_override=None):
         """動態更新側邊欄統計"""
-        processed_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
-        
-        # 如果有傳入數值則直接使用，否則讀取磁碟
-        if total_override is not None:
-            file_count = total_override
-        elif processed_dir.exists():
-            file_count = len(list(processed_dir.glob("*.md")))
-        else:
-            file_count = 0
+        try:
+            processed_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
             
-        if today_override is not None:
-            today_count = today_override
-        else:
-            # 計算今日處理數
-            from datetime import date, datetime
-            today = date.today()
-            today_count = sum(1 for f in processed_dir.glob("*.md") 
-                            if f.stat().st_mtime > datetime.combine(today, datetime.min.time()).timestamp()) if processed_dir.exists() else 0
+            # 如果有傳入數值則直接使用，否則讀取磁碟
+            if total_override is not None:
+                file_count = total_override
+            elif processed_dir.exists():
+                # 使用 list() 確保完整計算
+                md_files = list(processed_dir.glob("*.md"))
+                file_count = len(md_files)
+            else:
+                file_count = 0
+                
+            if today_override is not None:
+                today_count = today_override
+            else:
+                # 計算今日處理數
+                from datetime import date, datetime
+                today = date.today()
+                today_ts = datetime.combine(today, datetime.min.time()).timestamp()
+                if processed_dir.exists():
+                    today_count = sum(1 for f in processed_dir.glob("*.md") if f.stat().st_mtime > today_ts)
+                else:
+                    today_count = 0
+        except Exception as e:
+            print(f"統計計算錯誤: {e}")
+            file_count = 0
+            today_count = 0
 
         with sidebar_stats_container.container():
             col1, col2 = st.columns(2)
