@@ -90,15 +90,20 @@ class KnowledgeExtractor:
     
     def extract_knowledge(self, transcript: str, video_info: Dict = None) -> Dict:
         """
-        提取商業知識
+        提取商業知識（合併調用：知識 + 摘要 + 關鍵字）
         
         Args:
             transcript: 逐字稿 (已標記講者)
             video_info: 影片資訊 {'title': ..., 'url': ..., 'duration': ...}
             
         Returns:
-            提取的知識 {'summary': ..., 'knowledge': ..., 'metadata': ...}
+            提取的知識 {'summary': ..., 'knowledge': ..., 'keywords': ...}
         """
+        # 智能截斷：移除重複行
+        lines = transcript.split('\n')
+        unique_lines = list(dict.fromkeys(lines))
+        clean_transcript = '\n'.join([l for l in unique_lines if len(l.strip()) > 5])[:10000]
+        
         # 準備上下文
         context = ""
         if video_info:
@@ -109,6 +114,7 @@ class KnowledgeExtractor:
 - 時長: {video_info.get('duration', '未知')}
 """
         
+        # 合併 Prompt：知識提取 + 摘要 + 關鍵字
         prompt = f"""
 {self.knowledge_prompt}
 
@@ -116,83 +122,105 @@ class KnowledgeExtractor:
 
 ## 逐字稿內容
 
-{transcript[:12000]}  # 限制長度
+{clean_transcript}
+
+---
+
+## 額外輸出（請在知識提取後添加）
+
+### 一句話摘要
+請在文末添加：
+`<!-- SUMMARY: [不超過100字的核心觀點摘要] -->`
+
+### 關鍵字
+請在文末添加：
+`<!-- KEYWORDS: ["關鍵字1", "關鍵字2", ...] -->`
 """
         
-        knowledge_text = self.llm.generate(
+        result_text = self.llm.generate(
             prompt=prompt,
-            system_prompt="你是商業知識提取專家，請從逐字稿中提取關鍵商業知識。",
-            max_tokens=4000,
+            system_prompt="你是商業知識提取專家。請從逐字稿中提取知識，並在文末按指定格式添加摘要和關鍵字。",
+            max_tokens=4500,
             temperature=0.5
         )
         
-        if not knowledge_text:
+        if not result_text:
             return {"error": "知識提取失敗"}
         
-        # 生成摘要
-        summary = self._generate_summary(transcript[:4000])
+        # 解析合併結果
+        summary = ""
+        keywords = []
+        knowledge = result_text
+        
+        # 提取摘要
+        import re
+        summary_match = re.search(r'<!-- SUMMARY: (.+?) -->', result_text)
+        if summary_match:
+            summary = summary_match.group(1).strip()
+            knowledge = knowledge.replace(summary_match.group(0), '')
         
         # 提取關鍵字
-        keywords = self._extract_keywords(transcript[:4000])
+        keywords_match = re.search(r'<!-- KEYWORDS: (\[.+?\]) -->', result_text)
+        if keywords_match:
+            try:
+                import json
+                keywords = json.loads(keywords_match.group(1))
+                knowledge = knowledge.replace(keywords_match.group(0), '')
+            except:
+                pass
         
         return {
-            "knowledge": knowledge_text,
+            "knowledge": knowledge.strip(),
             "summary": summary,
             "keywords": keywords,
             "metadata": {
                 "processed_at": datetime.now().isoformat(),
                 "llm_provider": self.llm.current_provider,
-                "video_info": video_info
+                "video_info": video_info,
+                "optimized": True  # 標記使用優化版本
             }
         }
-    
-    def _generate_summary(self, text: str) -> str:
-        """生成一句話摘要"""
-        prompt = f"""
-請用一句話（不超過100字）總結以下內容的核心觀點：
-
-{text}
-"""
-        result = self.llm.generate(
-            prompt=prompt,
-            system_prompt="請用繁體中文輸出簡潔的摘要。",
-            max_tokens=200,
-            temperature=0.3
-        )
-        return result if result else ""
-    
-    def _extract_keywords(self, text: str) -> List[str]:
-        """提取關鍵字"""
-        prompt = f"""
-請從以下內容中提取 5-10 個關鍵字，以 JSON 數組格式輸出：
-
-{text}
-
-輸出格式: ["關鍵字1", "關鍵字2", ...]
-"""
-        result = self.llm.generate(
-            prompt=prompt,
-            system_prompt="請輸出純 JSON 數組，不要其他文字。",
-            max_tokens=200,
-            temperature=0.3
-        )
+    def _should_skip_speaker_id(self, video_info: Dict) -> bool:
+        """
+        判斷是否跳過講者識別（優化 API 調用）
         
-        if result:
-            try:
-                import json
-                # 清理可能的 markdown 代碼塊
-                result = result.strip().strip('`').strip()
-                if result.startswith('json'):
-                    result = result[4:].strip()
-                return json.loads(result)
-            except:
-                pass
+        跳過條件：
+        - 標題不包含訪談相關詞彙
+        - 非明顯多人對話內容
+        """
+        if not video_info:
+            return False
         
-        return []
+        title = video_info.get('title', '').lower()
+        
+        # 訪談相關關鍵字（需要講者識別）
+        interview_keywords = [
+            '訪談', '專訪', '對談', '對話', 'interview', 'podcast', 
+            '嘉賓', 'guest', 'feat', 'ft.', 'ft', 'with', '與', '和',
+            'q&a', 'qa', '問答'
+        ]
+        
+        # 如果標題包含訪談關鍵字，不跳過
+        for keyword in interview_keywords:
+            if keyword in title:
+                return False
+        
+        # 單人內容關鍵字（可跳過講者識別）
+        solo_keywords = [
+            'vlog', '教學', 'tutorial', 'guide', '分享', '心得',
+            'review', '評測', '開箱', 'unbox', '日常', 'routine'
+        ]
+        
+        for keyword in solo_keywords:
+            if keyword in title:
+                return True
+        
+        # 預設：不跳過（保守策略）
+        return False
     
     def process_transcript(self, transcript: str, video_info: Dict = None) -> Dict:
         """
-        完整處理逐字稿
+        完整處理逐字稿（優化版）
         
         Args:
             transcript: 原始逐字稿
@@ -203,11 +231,15 @@ class KnowledgeExtractor:
         """
         print("🔍 開始處理逐字稿...")
         
-        # 1. 識別講者（使用影片元數據輔助）
-        print("   👥 識別講者...")
-        marked_transcript = self.identify_speakers(transcript, video_info)
+        # 1. 智能判斷是否需要講者識別
+        if self._should_skip_speaker_id(video_info):
+            print("   ⚡ 跳過講者識別（單人內容）")
+            marked_transcript = transcript
+        else:
+            print("   👥 識別講者...")
+            marked_transcript = self.identify_speakers(transcript, video_info)
         
-        # 2. 提取知識
+        # 2. 提取知識（已合併摘要和關鍵字）
         print("   📚 提取商業知識...")
         result = self.extract_knowledge(marked_transcript, video_info)
         
