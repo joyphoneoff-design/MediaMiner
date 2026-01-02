@@ -110,49 +110,35 @@ with st.sidebar:
     
     # 狀態卡片
     st.markdown("### 📈 統計")
-    # 狀態卡片 (使用 empty container 以便動態更新)
-    sidebar_stats_container = st.empty()
-    
-    def update_sidebar_stats(total_override=None, today_override=None):
-        """動態更新側邊欄統計"""
-        try:
-            processed_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
+    # 初始化統計（直接計算，不使用函數閉包）
+    try:
+        processed_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
+        if processed_dir.exists():
+            md_files = list(processed_dir.glob("*.md"))
+            file_count = len(md_files)
             
-            # 如果有傳入數值則直接使用，否則讀取磁碟
-            if total_override is not None:
-                file_count = total_override
-            elif processed_dir.exists():
-                # 使用 list() 確保完整計算
-                md_files = list(processed_dir.glob("*.md"))
-                file_count = len(md_files)
-            else:
-                file_count = 0
-                
-            if today_override is not None:
-                today_count = today_override
-            else:
-                # 計算今日處理數
-                from datetime import date, datetime
-                today = date.today()
-                today_ts = datetime.combine(today, datetime.min.time()).timestamp()
-                if processed_dir.exists():
-                    today_count = sum(1 for f in processed_dir.glob("*.md") if f.stat().st_mtime > today_ts)
-                else:
-                    today_count = 0
-        except Exception as e:
-            print(f"統計計算錯誤: {e}")
+            from datetime import date, datetime
+            today = date.today()
+            today_ts = datetime.combine(today, datetime.min.time()).timestamp()
+            today_count = sum(1 for f in md_files if f.stat().st_mtime > today_ts)
+        else:
             file_count = 0
             today_count = 0
-
-        with sidebar_stats_container.container():
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("已處理", file_count)
-            with col2:
-                st.metric("今日", today_count)
+    except Exception as e:
+        print(f"統計計算錯誤: {e}")
+        file_count = 0
+        today_count = 0
     
-    # 初始化顯示
-    update_sidebar_stats()
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("已處理", file_count)
+    with col2:
+        st.metric("今日", today_count)
+    
+    # 存儲統計更新函數供後續調用
+    def update_sidebar_stats():
+        """強制重新計算統計（需要 st.rerun() 後生效）"""
+        pass  # 由於 Streamlit 重跑機制，實際更新會在頁面重載時自動執行
     
     st.divider()
     
