@@ -111,7 +111,7 @@ with st.sidebar:
     # 狀態卡片
     st.markdown("### 📈 統計")
     
-    # 初始化 session_state 中的統計值
+    # 計算統計值的函數
     def refresh_stats():
         """刷新統計值到 session_state"""
         try:
@@ -136,9 +136,8 @@ with st.sidebar:
         st.session_state.stats_today = today_count
         return file_count, today_count
     
-    # 初始化或刷新統計
-    if 'stats_total' not in st.session_state:
-        refresh_stats()
+    # 每次頁面載入都刷新統計（確保顯示最新值）
+    refresh_stats()
     
     # 顯示統計（從 session_state 讀取）
     col1, col2 = st.columns(2)
@@ -147,7 +146,12 @@ with st.sidebar:
     with col2:
         st.metric("今日", st.session_state.get('stats_today', 0))
     
-    # 存儲刷新函數供處理迴圈調用（每次成功後 refresh + rerun）
+    # 刷新按鈕
+    if st.button("🔄 刷新", key="refresh_stats_btn", help="點擊刷新統計數據"):
+        refresh_stats()
+        st.rerun()
+    
+    # 存儲刷新函數供處理迴圈調用
     st.session_state.refresh_sidebar_stats = refresh_stats
     
     st.divider()
