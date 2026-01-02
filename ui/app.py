@@ -110,35 +110,44 @@ with st.sidebar:
     
     # 狀態卡片
     st.markdown("### 📈 統計")
-    # 初始化統計（直接計算，不使用函數閉包）
-    try:
-        processed_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
-        if processed_dir.exists():
-            md_files = list(processed_dir.glob("*.md"))
-            file_count = len(md_files)
-            
-            from datetime import date, datetime
-            today = date.today()
-            today_ts = datetime.combine(today, datetime.min.time()).timestamp()
-            today_count = sum(1 for f in md_files if f.stat().st_mtime > today_ts)
-        else:
+    
+    # 使用 empty container 支援即時更新
+    stats_container = st.empty()
+    
+    def calculate_and_display_stats():
+        """計算並顯示統計（可在處理中調用）"""
+        try:
+            processed_dir = Path.home() / "Documents" / "MediaMiner_Data" / "processed"
+            if processed_dir.exists():
+                md_files = list(processed_dir.glob("*.md"))
+                file_count = len(md_files)
+                
+                from datetime import date, datetime
+                today = date.today()
+                today_ts = datetime.combine(today, datetime.min.time()).timestamp()
+                today_count = sum(1 for f in md_files if f.stat().st_mtime > today_ts)
+            else:
+                file_count = 0
+                today_count = 0
+        except Exception as e:
+            print(f"統計計算錯誤: {e}")
             file_count = 0
             today_count = 0
-    except Exception as e:
-        print(f"統計計算錯誤: {e}")
-        file_count = 0
-        today_count = 0
+        
+        with stats_container.container():
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("已處理", file_count)
+            with col2:
+                st.metric("今日", today_count)
+        
+        return file_count, today_count
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("已處理", file_count)
-    with col2:
-        st.metric("今日", today_count)
+    # 初始化顯示
+    calculate_and_display_stats()
     
-    # 存儲統計更新函數供後續調用
-    def update_sidebar_stats():
-        """強制重新計算統計（需要 st.rerun() 後生效）"""
-        pass  # 由於 Streamlit 重跑機制，實際更新會在頁面重載時自動執行
+    # 存儲函數到 session_state 供處理迴圈調用
+    st.session_state.update_sidebar_stats = calculate_and_display_stats
     
     st.divider()
     
@@ -530,7 +539,8 @@ if page == "📺 頻道擷取":
                                 error_msg = result.get('error', '未知錯誤')
                                 error_types[error_msg] = error_types.get(error_msg, 0) + 1
                         
-                        update_sidebar_stats()
+                        if hasattr(st.session_state, 'update_sidebar_stats'):
+                            st.session_state.update_sidebar_stats()
                     
                     # 批次完成後清理記憶體
                     del fetcher, extractor, injector
@@ -972,7 +982,8 @@ elif page == "📱 小紅書":
                             
                             results.append(result)
                             if result['success']:
-                                update_sidebar_stats()
+                                if hasattr(st.session_state, 'update_sidebar_stats'):
+                                    st.session_state.update_sidebar_stats()
                 else:
                     # 串行處理
                     for i, note in enumerate(selected_notes):
@@ -992,7 +1003,8 @@ elif page == "📱 小紅書":
                         
                         results.append(result)
                         if result['success']:
-                            update_sidebar_stats()
+                            if hasattr(st.session_state, 'update_sidebar_stats'):
+                                st.session_state.update_sidebar_stats()
                 
                 status_placeholder.empty()
                 
