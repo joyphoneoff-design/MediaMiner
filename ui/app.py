@@ -428,6 +428,8 @@ if page == "📺 頻道擷取":
                                 )
                                 
                                 # 生成 MD
+                                # 將識別到的 guest 放入 video_info
+                                guest = knowledge.get('guest')
                                 md_content = injector.create_markdown(
                                     content=transcript['text'],
                                     knowledge=knowledge.get('knowledge', ''),
@@ -436,7 +438,8 @@ if page == "📺 頻道擷取":
                                         'source': video.get('channel', ''),
                                         'platform': 'youtube',
                                         'url': video['url'],
-                                        'duration': video.get('duration')
+                                        'duration': video.get('duration'),
+                                        'guest': guest  # 訪談嘉賓
                                     },
                                     summary=knowledge.get('summary', ''),
                                     keywords=knowledge.get('keywords', []),
@@ -890,6 +893,9 @@ elif page == "📱 小紅書":
                             filename = injector.generate_safe_filename(note['title'])
                             output_file = output_dir / f"{filename}.md"
                             
+                            # 提取識別到的 guest
+                            guest = knowledge_result.get('guest') if isinstance(knowledge_result, dict) else None
+                            
                             md_content = injector.create_markdown(
                                 content=transcript.get('text', ''),
                                 knowledge=knowledge_str,
@@ -897,7 +903,8 @@ elif page == "📱 小紅書":
                                     'title': note['title'],
                                     'url': note['url'],
                                     'source': '小紅書',
-                                    'platform': 'xiaohongshu'
+                                    'platform': 'xiaohongshu',
+                                    'guest': guest  # 訪談嘉賓
                                 },
                                 summary=knowledge_result.get('summary', '') if isinstance(knowledge_result, dict) else '',
                                 keywords=knowledge_result.get('keywords', []) if isinstance(knowledge_result, dict) else [],

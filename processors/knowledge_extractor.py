@@ -102,18 +102,65 @@ class KnowledgeExtractor:
             pass
         return []
     
+    def _is_interview_content(self, transcript: str, video_info: Dict = None) -> bool:
+        """
+        預檢：判斷是否為訪談內容 (不調用 LLM，節約 API)
+        
+        檢驗機制：
+        1. 標題關鍵字檢查
+        2. 逐字稿內容關鍵字檢查
+        
+        Returns:
+            True = 可能是訪談，需要識別 guest
+            False = 非訪談，跳過 guest 識別
+        """
+        # 訪談相關關鍵字
+        interview_keywords = [
+            '訪談', '專訪', '對談', '對話', '訪問', '請到', '邀請',
+            '嘉賓', '老師', '來賓', '特別嘉賓',
+            'interview', 'podcast', 'guest', 'feat', 'ft.', 'with',
+            'q&a', 'qa', '問答', '連線'
+        ]
+        
+        # 1. 檢查標題
+        title = ""
+        if video_info:
+            title = video_info.get('title', '').lower()
+        
+        for keyword in interview_keywords:
+            if keyword.lower() in title:
+                return True
+        
+        # 2. 檢查逐字稿前 500 字
+        transcript_head = transcript[:500].lower() if transcript else ""
+        
+        # 訪談開場特徵
+        interview_patterns = [
+            '今天我們請到', '今天的嘉賓', '今天邀請', '歡迎來到',
+            '請問', '可以介紹一下', '先做個自我介紹',
+            '謝謝邀請', '很高興來到', '感謝主持人',
+            "today's guest", "welcome to the show", "thanks for having me"
+        ]
+        
+        for pattern in interview_patterns:
+            if pattern.lower() in transcript_head:
+                return True
+        
+        return False
+    
     def extract_knowledge(self, transcript: str, video_info: Dict = None) -> Dict:
         """
-        提取商業知識（合併調用：知識 + 摘要 + 關鍵字 + 實體 + 標籤）
+        提取商業知識（合併調用：知識 + 摘要 + 關鍵字 + 實體 + 標籤 + 嘉賓）
         
         80/20 優化：在源頭一次完成所有提取，避免 R2R Phase1 重複 API 調用
+        訪談識別：預檢機制節約 API，只在訪談內容時提取 guest
         
         Args:
             transcript: 逐字稿 (已標記講者)
             video_info: 影片資訊 {'title': ..., 'url': ..., 'duration': ...}
             
         Returns:
-            提取的知識 {'summary': ..., 'knowledge': ..., 'keywords': ..., 'entities': ..., 'tags': ...}
+            提取的知識 {'summary': ..., 'knowledge': ..., 'keywords': ..., 'entities': ..., 'tags': ..., 'guest': ...}
         """
         # 智能截斷：移除重複行
         lines = transcript.split('\n')
@@ -138,6 +185,19 @@ class KnowledgeExtractor:
 `<!-- TAGS: ["標籤1", "標籤2", ...] -->`
 """
         
+        # 訪談嘉賓識別 (預檢機制節約 API)
+        is_interview = self._is_interview_content(clean_transcript, video_info)
+        guest_hint = ""
+        if is_interview:
+            guest_hint = """
+### 訪談嘉賓 (Guest)
+如果這是訪談/對談內容，請識別受訪者/嘉賓姓名。
+注意：主持人/頻道主不算嘉賓，只識別被邀請的來賓。
+如無嘉賓或無法識別，請輸出空字串。
+請在文末添加：
+`<!-- GUEST: "嘉賓姓名" -->`
+"""
+        
         # 準備上下文
         context = ""
         if video_info:
@@ -148,7 +208,7 @@ class KnowledgeExtractor:
 - 時長: {video_info.get('duration', '未知')}
 """
         
-        # 合併 Prompt：知識提取 + 摘要 + 關鍵字 + 實體 + 標籤
+        # 合併 Prompt：知識提取 + 摘要 + 關鍵字 + 實體 + 標籤 + 嘉賓
         prompt = f"""
 {self.knowledge_prompt}
 
@@ -171,6 +231,7 @@ class KnowledgeExtractor:
 `<!-- KEYWORDS: ["關鍵字1", "關鍵字2", ...] -->`
 
 {ontology_hint}
+{guest_hint}
 """
         
         result_text = self.llm.generate(
@@ -226,18 +287,30 @@ class KnowledgeExtractor:
             except:
                 pass
         
+        # 提取訪談嘉賓 (條件式：只在訪談內容時提取)
+        guest = None
+        guest_match = re.search(r'<!-- GUEST: "(.+?)" -->', result_text)
+        if guest_match:
+            guest = guest_match.group(1).strip()
+            if guest and guest not in ['', '無', 'None', 'null', '無法識別']:
+                knowledge = knowledge.replace(guest_match.group(0), '')
+            else:
+                guest = None
+        
         return {
             "knowledge": knowledge.strip(),
             "summary": summary,
             "keywords": keywords,
-            "entities": entities,  # 新增
-            "tags": tags,          # 新增
+            "entities": entities,
+            "tags": tags,
+            "guest": guest,  # 新增：訪談嘉賓
             "metadata": {
                 "processed_at": datetime.now().isoformat(),
                 "llm_provider": self.llm.current_provider,
                 "video_info": video_info,
                 "optimized": True,
-                "ontology_used": len(ontology_entities) > 0  # 標記是否使用本體論
+                "ontology_used": len(ontology_entities) > 0,
+                "is_interview": is_interview  # 標記是否偵測為訪談
             }
         }
     def _should_skip_speaker_id(self, video_info: Dict) -> bool:
