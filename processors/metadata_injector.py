@@ -19,9 +19,13 @@ class MarkdownFormatter:
                         knowledge: str,
                         video_info: Dict,
                         summary: str = "",
-                        keywords: List[str] = None) -> str:
+                        keywords: List[str] = None,
+                        entities: List[str] = None,
+                        tags: List[str] = None) -> str:
         """
         創建 Markdown 文件 (含統一 YAML frontmatter)
+        
+        80/20 優化：在源頭生成完整 YAML (含 entities/tags)，避免 R2R Phase1 重複處理
         
         Args:
             content: 原始內容 (逐字稿)
@@ -29,6 +33,8 @@ class MarkdownFormatter:
             video_info: 影片資訊
             summary: AI 摘要
             keywords: 關鍵字列表
+            entities: 本體論實體列表 (80/20 優化)
+            tags: 標籤列表 (80/20 優化)
             
         Returns:
             Markdown 內容 (含 YAML frontmatter)
@@ -77,6 +83,16 @@ class MarkdownFormatter:
             # 移除換行符避免 YAML 解析問題
             clean_summary = summary.replace('\n', ' ').replace('"', "'")[:200]
             frontmatter_lines.append(f'summary: "{clean_summary}"')
+        
+        # Entities (80/20 優化：源頭生成)
+        if entities:
+            entities_str = ", ".join(entities[:8])
+            frontmatter_lines.append(f"entities: [{entities_str}]")
+        
+        # Tags (80/20 優化：源頭生成)
+        if tags:
+            tags_str = ", ".join(tags[:5])
+            frontmatter_lines.append(f"tags: [{tags_str}]")
         
         frontmatter_lines.append("---")
         

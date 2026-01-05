@@ -88,21 +88,55 @@ class KnowledgeExtractor:
         
         return result if result else transcript
     
+    def _load_ontology_entities(self) -> List[str]:
+        """載入本體論實體清單 (80/20 優化)"""
+        ontology_path = Path.home() / "R2R/config/ontology/solo_entrepreneur_synonyms.json"
+        try:
+            if ontology_path.exists():
+                import json
+                with open(ontology_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                # 提取所有 entity 的 name
+                return [item.get("name", "") for item in data if item.get("name")]
+        except Exception:
+            pass
+        return []
+    
     def extract_knowledge(self, transcript: str, video_info: Dict = None) -> Dict:
         """
-        提取商業知識（合併調用：知識 + 摘要 + 關鍵字）
+        提取商業知識（合併調用：知識 + 摘要 + 關鍵字 + 實體 + 標籤）
+        
+        80/20 優化：在源頭一次完成所有提取，避免 R2R Phase1 重複 API 調用
         
         Args:
             transcript: 逐字稿 (已標記講者)
             video_info: 影片資訊 {'title': ..., 'url': ..., 'duration': ...}
             
         Returns:
-            提取的知識 {'summary': ..., 'knowledge': ..., 'keywords': ...}
+            提取的知識 {'summary': ..., 'knowledge': ..., 'keywords': ..., 'entities': ..., 'tags': ...}
         """
         # 智能截斷：移除重複行
         lines = transcript.split('\n')
         unique_lines = list(dict.fromkeys(lines))
         clean_transcript = '\n'.join([l for l in unique_lines if len(l.strip()) > 5])[:10000]
+        
+        # 載入本體論實體 (80/20 優化)
+        ontology_entities = self._load_ontology_entities()
+        ontology_hint = ""
+        if ontology_entities:
+            ontology_hint = f"""
+### 實體 (Entities)
+請從以下預定義實體中選擇 3-8 個最匹配的：
+{', '.join(ontology_entities[:80])}...
+
+請在文末添加：
+`<!-- ENTITIES: ["實體1", "實體2", ...] -->`
+
+### 標籤 (Tags)
+請生成 3-5 個適合用於筆記分類的標籤（不含 #）：
+請在文末添加：
+`<!-- TAGS: ["標籤1", "標籤2", ...] -->`
+"""
         
         # 準備上下文
         context = ""
@@ -114,7 +148,7 @@ class KnowledgeExtractor:
 - 時長: {video_info.get('duration', '未知')}
 """
         
-        # 合併 Prompt：知識提取 + 摘要 + 關鍵字
+        # 合併 Prompt：知識提取 + 摘要 + 關鍵字 + 實體 + 標籤
         prompt = f"""
 {self.knowledge_prompt}
 
@@ -135,11 +169,13 @@ class KnowledgeExtractor:
 ### 關鍵字
 請在文末添加：
 `<!-- KEYWORDS: ["關鍵字1", "關鍵字2", ...] -->`
+
+{ontology_hint}
 """
         
         result_text = self.llm.generate(
             prompt=prompt,
-            system_prompt="你是商業知識提取專家。請從逐字稿中提取知識，並在文末按指定格式添加摘要和關鍵字。",
+            system_prompt="你是商業知識提取專家。請從逐字稿中提取知識，並在文末按指定格式添加摘要、關鍵字、實體和標籤。",
             max_tokens=4500,
             temperature=0.5
         )
@@ -150,10 +186,14 @@ class KnowledgeExtractor:
         # 解析合併結果
         summary = ""
         keywords = []
+        entities = []
+        tags = []
         knowledge = result_text
         
         # 提取摘要
         import re
+        import json
+        
         summary_match = re.search(r'<!-- SUMMARY: (.+?) -->', result_text)
         if summary_match:
             summary = summary_match.group(1).strip()
@@ -163,9 +203,26 @@ class KnowledgeExtractor:
         keywords_match = re.search(r'<!-- KEYWORDS: (\[.+?\]) -->', result_text)
         if keywords_match:
             try:
-                import json
                 keywords = json.loads(keywords_match.group(1))
                 knowledge = knowledge.replace(keywords_match.group(0), '')
+            except:
+                pass
+        
+        # 提取實體 (80/20 優化)
+        entities_match = re.search(r'<!-- ENTITIES: (\[.+?\]) -->', result_text)
+        if entities_match:
+            try:
+                entities = json.loads(entities_match.group(1))
+                knowledge = knowledge.replace(entities_match.group(0), '')
+            except:
+                pass
+        
+        # 提取標籤 (80/20 優化)
+        tags_match = re.search(r'<!-- TAGS: (\[.+?\]) -->', result_text)
+        if tags_match:
+            try:
+                tags = json.loads(tags_match.group(1))
+                knowledge = knowledge.replace(tags_match.group(0), '')
             except:
                 pass
         
@@ -173,11 +230,14 @@ class KnowledgeExtractor:
             "knowledge": knowledge.strip(),
             "summary": summary,
             "keywords": keywords,
+            "entities": entities,  # 新增
+            "tags": tags,          # 新增
             "metadata": {
                 "processed_at": datetime.now().isoformat(),
                 "llm_provider": self.llm.current_provider,
                 "video_info": video_info,
-                "optimized": True  # 標記使用優化版本
+                "optimized": True,
+                "ontology_used": len(ontology_entities) > 0  # 標記是否使用本體論
             }
         }
     def _should_skip_speaker_id(self, video_info: Dict) -> bool:
