@@ -38,6 +38,7 @@ class MarkdownFormatter:
         url = video_info.get('url', '')
         duration = video_info.get('duration', '')
         platform = video_info.get('platform', 'youtube')
+        upload_year = video_info.get('upload_year', None)  # 上傳年份
         
         # 決定 source 值
         source_type = self._determine_source_type(platform, video_info)
@@ -54,6 +55,10 @@ class MarkdownFormatter:
             frontmatter_lines.append(f"url: {url}")
         if duration:
             frontmatter_lines.append(f"duration: \"{self._format_duration(duration)}\"")
+        
+        # content_year: 上傳年份 (僅年份，無法判斷則省略)
+        if upload_year:
+            frontmatter_lines.append(f"content_year: {upload_year}")
         
         frontmatter_lines.append(f"processed_at: {datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}")
         
