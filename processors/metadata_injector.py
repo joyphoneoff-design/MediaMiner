@@ -39,6 +39,7 @@ class MarkdownFormatter:
         duration = video_info.get('duration', '')
         platform = video_info.get('platform', 'youtube')
         upload_year = video_info.get('upload_year', None)  # 上傳年份
+        guest = video_info.get('guest', None)  # 訪談嘉賓 (新增)
         
         # 決定 source 值
         source_type = self._determine_source_type(platform, video_info)
@@ -48,8 +49,12 @@ class MarkdownFormatter:
             "---",
             f"title: {title}",
             f"source: {source_type}",
-            f"author: {source_name}",
+            f"author: {source_name}",  # 主持人/主講者
         ]
+        
+        # 訪談嘉賓 (若有)
+        if guest:
+            frontmatter_lines.append(f"guest: {guest}")
         
         if url:
             frontmatter_lines.append(f"url: {url}")
