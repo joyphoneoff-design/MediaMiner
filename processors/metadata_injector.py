@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Markdown 輸出器 (簡化版)
-輸出純 MD 格式，不含 YAML frontmatter
-Metadata 和繁簡轉換由 MetaEnricher 處理
+Markdown 輸出器 (統一版)
+輸出含 YAML frontmatter 的 MD 格式
+包含 source 欄位和統一的元數據結構
 """
 
 import re
@@ -12,53 +12,101 @@ from datetime import datetime
 
 
 class MarkdownFormatter:
-    """Markdown 格式化器 (簡化版)"""
+    """Markdown 格式化器 (統一版 - 含 YAML frontmatter)"""
     
     def create_markdown(self,
                         content: str,
                         knowledge: str,
-                        video_info: Dict) -> str:
+                        video_info: Dict,
+                        summary: str = "",
+                        keywords: List[str] = None) -> str:
         """
-        創建純 Markdown 文件 (可讀格式，無 YAML)
+        創建 Markdown 文件 (含統一 YAML frontmatter)
         
         Args:
             content: 原始內容 (逐字稿)
             knowledge: 提取的知識
             video_info: 影片資訊
+            summary: AI 摘要
+            keywords: 關鍵字列表
             
         Returns:
-            純 Markdown 內容 (無 YAML frontmatter)
+            Markdown 內容 (含 YAML frontmatter)
         """
         title = video_info.get('title', '未知標題')
-        source = video_info.get('source', '未知來源')
+        source_name = video_info.get('source', '未知來源')
         url = video_info.get('url', '')
         duration = video_info.get('duration', '')
         platform = video_info.get('platform', 'youtube')
         
-        # 組合純 Markdown (人類可讀)
-        markdown_parts = [
-            f"# {title}",
-            "",
-            f"**來源**: {platform.capitalize()} / {source}  ",
-            f"**URL**: {url}  " if url else "",
-            f"**時長**: {self._format_duration(duration)}  " if duration else "",
-            f"**處理日期**: {datetime.now().strftime('%Y-%m-%d')}",
-            "",
+        # 決定 source 值
+        source_type = self._determine_source_type(platform, video_info)
+        
+        # 構建 YAML frontmatter
+        frontmatter_lines = [
             "---",
-            "",
-            "## 商業知識提取",
-            "",
-            knowledge if knowledge else "_（無知識提取結果）_",
-            "",
-            "---",
-            "",
-            "## 原始逐字稿",
-            "",
-            content if content else "_（無逐字稿）_",
+            f"title: {title}",
+            f"source: {source_type}",
+            f"author: {source_name}",
         ]
         
-        # 過濾空行
-        return '\n'.join([p for p in markdown_parts if p is not None])
+        if url:
+            frontmatter_lines.append(f"url: {url}")
+        if duration:
+            frontmatter_lines.append(f"duration: \"{self._format_duration(duration)}\"")
+        
+        frontmatter_lines.append(f"processed_at: {datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}")
+        
+        # Keywords
+        if keywords:
+            keywords_str = ", ".join(keywords[:10])
+            frontmatter_lines.append(f"keywords: [{keywords_str}]")
+        
+        # Summary
+        if summary:
+            # 移除換行符避免 YAML 解析問題
+            clean_summary = summary.replace('\n', ' ').replace('"', "'")[:200]
+            frontmatter_lines.append(f'summary: "{clean_summary}"')
+        
+        frontmatter_lines.append("---")
+        
+        frontmatter = "\n".join(frontmatter_lines)
+        
+        # 組合 Markdown 內容
+        markdown_parts = [
+            frontmatter,
+            "",
+            "## 逐字稿全文",
+            "",
+            content if content else "_（無逐字稿）_",
+            "",
+            "---",
+            "",
+            "## AI 知識提取",
+            "",
+            knowledge if knowledge else "_（無知識提取結果）_",
+        ]
+        
+        return '\n'.join(markdown_parts)
+    
+    def _determine_source_type(self, platform: str, video_info: Dict) -> str:
+        """決定 source 類型"""
+        platform_lower = platform.lower() if platform else ''
+        
+        if platform_lower in ['youtube', 'yt']:
+            return 'youtube'
+        elif platform_lower in ['xiaohongshu', 'xhs', 'rednote', '小紅書']:
+            return 'xiaohongshu'
+        elif platform_lower in ['podcast', 'audio']:
+            return 'podcast'
+        elif platform_lower in ['ebook', 'pdf', 'book', '電子書']:
+            return 'ebook'
+        elif platform_lower in ['tutorial', '教程']:
+            return 'tutorial'
+        elif platform_lower in ['article', 'web', 'blog']:
+            return 'article'
+        else:
+            return platform_lower if platform_lower else 'unknown'
     
     def _format_duration(self, duration) -> str:
         """格式化時長"""

@@ -437,7 +437,9 @@ if page == "📺 頻道擷取":
                                         'platform': 'youtube',
                                         'url': video['url'],
                                         'duration': video.get('duration')
-                                    }
+                                    },
+                                    summary=knowledge.get('summary', ''),
+                                    keywords=knowledge.get('keywords', [])
                                 )
                                 
                                 output_file.write_text(md_content, encoding='utf-8')
@@ -894,7 +896,9 @@ elif page == "📱 小紅書":
                                     'url': note['url'],
                                     'source': '小紅書',
                                     'platform': 'xiaohongshu'
-                                }
+                                },
+                                summary=knowledge_result.get('summary', '') if isinstance(knowledge_result, dict) else '',
+                                keywords=knowledge_result.get('keywords', []) if isinstance(knowledge_result, dict) else []
                             )
                             
                             output_file.write_text(md_content, encoding='utf-8')
