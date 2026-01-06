@@ -261,8 +261,8 @@ class KnowledgeExtractor:
         
         result_text = self.llm.generate(
             prompt=prompt,
-            system_prompt="你是商業知識提取專家。請從逐字稿中提取知識，並在文末按指定格式添加所有必填標記（摘要、關鍵字、實體、標籤、格式化逐字稿）。每個標記都必須輸出。",
-            max_tokens=6000,  # 增加 token 以容納格式化逐字稿
+            system_prompt="你是資深逐字稿整理專家兼商業知識提取專家。請從逐字稿中提取知識，並完成逐字稿格式化（中文/英文皆適用）。請在文末按指定格式添加所有必填標記（摘要、關鍵字、實體、標籤、格式化逐字稿）。每個標記都必須輸出。",
+            max_tokens=6000,
             temperature=0.5
         )
         
