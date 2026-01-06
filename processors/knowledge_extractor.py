@@ -120,6 +120,95 @@ class KnowledgeExtractor:
             pass
         return []
     
+    def _fuzzy_match(self, text: str, candidates: List[str], threshold: float = 0.3) -> Optional[str]:
+        """
+        模糊匹配：找到最接近的候選項
+        使用簡單的字符重疊算法（無需額外依賴）
+        """
+        if not text or not candidates:
+            return None
+        
+        text_lower = text.lower().replace(' ', '')
+        best_match = None
+        best_score = threshold
+        
+        for candidate in candidates:
+            candidate_lower = candidate.lower().replace(' ', '')
+            
+            # 完全匹配
+            if text_lower == candidate_lower:
+                return candidate
+            
+            # 包含匹配（優先）
+            if text_lower in candidate_lower or candidate_lower in text_lower:
+                score = min(len(text_lower), len(candidate_lower)) / max(len(text_lower), len(candidate_lower))
+                if score > best_score:
+                    best_score = score
+                    best_match = candidate
+                continue
+            
+            # 字符重疊分數
+            common = set(text_lower) & set(candidate_lower)
+            score = len(common) / max(len(set(text_lower)), len(set(candidate_lower)))
+            
+            if score > best_score:
+                best_score = score
+                best_match = candidate
+        
+        return best_match
+    
+    def _validate_entities(self, entities: List[str]) -> List[str]:
+        """
+        後處理驗證：確保 entities 100% 符合預設本體論
+        不符合的項目會映射到最接近的預設實體
+        """
+        ontology_entities = self._load_ontology_entities()
+        if not ontology_entities:
+            return entities[:8]  # 無 ontology 則直接返回
+        
+        validated = []
+        ontology_set = set(ontology_entities)
+        
+        for entity in entities:
+            # 完全匹配
+            if entity in ontology_set:
+                if entity not in validated:
+                    validated.append(entity)
+            else:
+                # 模糊匹配
+                match = self._fuzzy_match(entity, ontology_entities)
+                if match and match not in validated:
+                    validated.append(match)
+                    print(f"   📎 Entity 映射: {entity} → {match}")
+        
+        return validated[:8]  # 最多 8 個
+    
+    def _validate_tags(self, tags: List[str]) -> List[str]:
+        """
+        後處理驗證：確保 tags 100% 符合預設標籤集
+        不符合的項目會映射到最接近的預設標籤
+        """
+        ontology_tags = self._load_ontology_tags()
+        if not ontology_tags:
+            return tags[:5]  # 無預設則直接返回
+        
+        validated = []
+        tags_set = set(ontology_tags)
+        
+        for tag in tags:
+            # 完全匹配
+            if tag in tags_set:
+                if tag not in validated:
+                    validated.append(tag)
+            else:
+                # 模糊匹配
+                match = self._fuzzy_match(tag, ontology_tags)
+                if match and match not in validated:
+                    validated.append(match)
+                    print(f"   🏷️ Tag 映射: {tag} → {match}")
+        
+        return validated[:5]  # 最多 5 個
+    
     def _is_interview_content(self, transcript: str, video_info: Dict = None) -> bool:
         """
         預檢：判斷是否為訪談內容 (不調用 LLM，節約 API)
@@ -363,21 +452,27 @@ class KnowledgeExtractor:
             formatted_transcript = transcript_match.group(1).strip()
             knowledge = knowledge.replace(transcript_match.group(0), '')
         
+        # 後處理驗證：確保 entities 和 tags 100% 符合預設本體論
+        validated_entities = self._validate_entities(entities) if entities else []
+        validated_tags = self._validate_tags(tags) if tags else []
+        
         return {
             "knowledge": knowledge.strip(),
             "summary": summary,
             "keywords": keywords,
-            "entities": entities,
-            "tags": tags,
+            "entities": validated_entities,  # 驗證後的 entities
+            "tags": validated_tags,  # 驗證後的 tags
             "guest": guest,
-            "formatted_transcript": formatted_transcript,  # 新增：格式化逐字稿
+            "formatted_transcript": formatted_transcript,
             "metadata": {
                 "processed_at": datetime.now().isoformat(),
                 "llm_provider": self.llm.current_provider,
                 "video_info": video_info,
                 "optimized": True,
                 "ontology_used": len(ontology_entities) > 0,
-                "is_interview": is_interview
+                "is_interview": is_interview,
+                "entities_validated": len(validated_entities) > 0,
+                "tags_validated": len(validated_tags) > 0
             }
         }
     def _should_skip_speaker_id(self, video_info: Dict) -> bool:
