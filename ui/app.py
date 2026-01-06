@@ -435,8 +435,10 @@ if page == "📺 頻道擷取":
                                 # 生成 MD
                                 # 將識別到的 guest 放入 video_info
                                 guest = knowledge.get('guest')
+                                # 使用格式化逐字稿 (含標點符號)，若無則使用原始
+                                final_transcript = knowledge.get('formatted_transcript') or transcript['text']
                                 md_content = injector.create_markdown(
-                                    content=transcript['text'],
+                                    content=final_transcript,
                                     knowledge=knowledge.get('knowledge', ''),
                                     video_info={
                                         'title': video['title'],

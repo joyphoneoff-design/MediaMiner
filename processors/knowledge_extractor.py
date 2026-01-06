@@ -150,17 +150,17 @@ class KnowledgeExtractor:
     
     def extract_knowledge(self, transcript: str, video_info: Dict = None) -> Dict:
         """
-        提取商業知識（合併調用：知識 + 摘要 + 關鍵字 + 實體 + 標籤 + 嘉賓）
+        提取商業知識（合併調用：知識 + 摘要 + 關鍵字 + 實體 + 標籤 + 嘉賓 + 逐字稿格式化）
         
         80/20 優化：在源頭一次完成所有提取，避免 R2R Phase1 重複 API 調用
-        訪談識別：預檢機制節約 API，只在訪談內容時提取 guest
+        新增：逐字稿標點符號與斷句修復（同一調用中完成）
         
         Args:
             transcript: 逐字稿 (已標記講者)
             video_info: 影片資訊 {'title': ..., 'url': ..., 'duration': ...}
             
         Returns:
-            提取的知識 {'summary': ..., 'knowledge': ..., 'keywords': ..., 'entities': ..., 'tags': ..., 'guest': ...}
+            提取的知識 {'summary': ..., 'knowledge': ..., 'keywords': ..., 'entities': ..., 'tags': ..., 'guest': ..., 'formatted_transcript': ...}
         """
         # 智能截斷：移除重複行
         lines = transcript.split('\n')
@@ -172,16 +172,29 @@ class KnowledgeExtractor:
         ontology_hint = ""
         if ontology_entities:
             ontology_hint = f"""
-### 實體 (Entities)
-請從以下預定義實體中選擇 3-8 個最匹配的：
+### 實體 (Entities) [必填]
+請從以下預定義實體中選擇 3-8 個最匹配的（優先選擇）：
 {', '.join(ontology_entities[:80])}...
 
-請在文末添加：
+**必須**在文末添加：
 `<!-- ENTITIES: ["實體1", "實體2", ...] -->`
 
-### 標籤 (Tags)
-請生成 3-5 個適合用於筆記分類的標籤（不含 #）：
-請在文末添加：
+### 標籤 (Tags) [必填]
+請生成 3-5 個適合用於筆記分類的標籤（不含 #，例如：商業模式、創業心態）：
+**必須**在文末添加：
+`<!-- TAGS: ["標籤1", "標籤2", ...] -->`
+"""
+        else:
+            # 即使沒有 ontology，也要求生成 entities 和 tags
+            ontology_hint = """
+### 實體 (Entities) [必填]
+請識別 3-8 個核心商業概念（如：商業模式、產品市場匹配、定位策略等）：
+**必須**在文末添加：
+`<!-- ENTITIES: ["實體1", "實體2", ...] -->`
+
+### 標籤 (Tags) [必填]
+請生成 3-5 個適合用於筆記分類的標籤：
+**必須**在文末添加：
 `<!-- TAGS: ["標籤1", "標籤2", ...] -->`
 """
         
@@ -208,7 +221,7 @@ class KnowledgeExtractor:
 - 時長: {video_info.get('duration', '未知')}
 """
         
-        # 合併 Prompt：知識提取 + 摘要 + 關鍵字 + 實體 + 標籤 + 嘉賓
+        # 合併 Prompt：知識提取 + 摘要 + 關鍵字 + 實體 + 標籤 + 嘉賓 + 逐字稿格式化
         prompt = f"""
 {self.knowledge_prompt}
 
@@ -220,14 +233,26 @@ class KnowledgeExtractor:
 
 ---
 
-## 額外輸出（請在知識提取後添加）
+## 額外輸出（請在知識提取後添加，所有標記都是必填）
 
-### 一句話摘要
-請在文末添加：
+### 逐字稿格式化 [必填]
+請修復逐字稿的標點符號與斷句，使其易於閱讀：
+- 添加適當的句號、逗號、問號
+- 適當斷句分段
+- 保留原始內容，僅修正格式
+- **若為中文內容，必須使用繁體中文，並轉換為台灣用語用詞**
+  （例：视频→影片、信息→資訊、软件→軟體、网络→網路、用户→使用者等）
+**必須**在文末添加（整理後的逐字稿）：
+`<!-- FORMATTED_TRANSCRIPT_START -->`
+[整理後的逐字稿全文]
+`<!-- FORMATTED_TRANSCRIPT_END -->`
+
+### 一句話摘要 [必填]
+**必須**在文末添加：
 `<!-- SUMMARY: [不超過100字的核心觀點摘要] -->`
 
-### 關鍵字
-請在文末添加：
+### 關鍵字 [必填]
+**必須**在文末添加：
 `<!-- KEYWORDS: ["關鍵字1", "關鍵字2", ...] -->`
 
 {ontology_hint}
@@ -236,8 +261,8 @@ class KnowledgeExtractor:
         
         result_text = self.llm.generate(
             prompt=prompt,
-            system_prompt="你是商業知識提取專家。請從逐字稿中提取知識，並在文末按指定格式添加摘要、關鍵字、實體和標籤。",
-            max_tokens=4500,
+            system_prompt="你是商業知識提取專家。請從逐字稿中提取知識，並在文末按指定格式添加所有必填標記（摘要、關鍵字、實體、標籤、格式化逐字稿）。每個標記都必須輸出。",
+            max_tokens=6000,  # 增加 token 以容納格式化逐字稿
             temperature=0.5
         )
         
@@ -297,20 +322,32 @@ class KnowledgeExtractor:
             else:
                 guest = None
         
+        # 提取格式化逐字稿 (80/20 優化：單次 API 完成標點符號修復)
+        formatted_transcript = None
+        transcript_match = re.search(
+            r'<!-- FORMATTED_TRANSCRIPT_START -->\s*(.*?)\s*<!-- FORMATTED_TRANSCRIPT_END -->', 
+            result_text, 
+            re.DOTALL
+        )
+        if transcript_match:
+            formatted_transcript = transcript_match.group(1).strip()
+            knowledge = knowledge.replace(transcript_match.group(0), '')
+        
         return {
             "knowledge": knowledge.strip(),
             "summary": summary,
             "keywords": keywords,
             "entities": entities,
             "tags": tags,
-            "guest": guest,  # 新增：訪談嘉賓
+            "guest": guest,
+            "formatted_transcript": formatted_transcript,  # 新增：格式化逐字稿
             "metadata": {
                 "processed_at": datetime.now().isoformat(),
                 "llm_provider": self.llm.current_provider,
                 "video_info": video_info,
                 "optimized": True,
                 "ontology_used": len(ontology_entities) > 0,
-                "is_interview": is_interview  # 標記是否偵測為訪談
+                "is_interview": is_interview
             }
         }
     def _should_skip_speaker_id(self, video_info: Dict) -> bool:
