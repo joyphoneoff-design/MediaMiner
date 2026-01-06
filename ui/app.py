@@ -281,7 +281,7 @@ if page == "📺 頻道擷取":
                 is_selected = i in st.session_state.selected_videos
                 
                 checked = st.checkbox(
-                    "", 
+                    "選取", 
                     value=is_selected,
                     key=checkbox_key,
                     label_visibility="collapsed"
