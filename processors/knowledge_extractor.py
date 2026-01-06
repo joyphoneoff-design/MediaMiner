@@ -96,8 +96,26 @@ class KnowledgeExtractor:
                 import json
                 with open(ontology_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                # 提取所有 entity 的 name
-                return [item.get("name", "") for item in data if item.get("name")]
+                # 提取所有 entity 的 key (主實體名稱)
+                return list(data.keys())
+        except Exception:
+            pass
+        return []
+    
+    def _load_ontology_tags(self) -> List[str]:
+        """載入預設標籤清單 (80/20 優化 - 嚴格限制)"""
+        tags_path = Path.home() / "R2R/config/ontology/solo_entrepreneur_tags.yaml"
+        try:
+            if tags_path.exists():
+                import yaml
+                with open(tags_path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                # 提取所有 dimensions 下的 tags
+                all_tags = []
+                for dim_key, dim_val in data.get('dimensions', {}).items():
+                    for cat_key, cat_val in dim_val.get('categories', {}).items():
+                        all_tags.extend(cat_val.get('tags', []))
+                return all_tags
         except Exception:
             pass
         return []
@@ -169,31 +187,43 @@ class KnowledgeExtractor:
         
         # 載入本體論實體 (80/20 優化)
         ontology_entities = self._load_ontology_entities()
+        ontology_tags = self._load_ontology_tags()
+        
         ontology_hint = ""
         if ontology_entities:
             ontology_hint = f"""
-### 實體 (Entities) [必填]
-請從以下預定義實體中選擇 3-8 個最匹配的（優先選擇）：
-{', '.join(ontology_entities[:80])}...
+### 實體 (Entities) [必填 - 嚴格限制]
+**請「只能」從以下預定義實體中選擇 3-8 個最匹配的，禁止自行創造新實體：**
+{', '.join(ontology_entities[:100])}
+
+⚠️ 注意：只能選擇上述實體，不得創造任何新項目！
 
 **必須**在文末添加：
 `<!-- ENTITIES: ["實體1", "實體2", ...] -->`
 
-### 標籤 (Tags) [必填]
-請生成 3-5 個適合用於筆記分類的標籤（不含 #，例如：商業模式、創業心態）：
+### 標籤 (Tags) [必填 - 嚴格限制]
+**請「只能」從以下預定義標籤中選擇 3-5 個最匹配的，禁止自行創造新標籤：**
+{', '.join(ontology_tags[:60])}
+
+⚠️ 注意：只能選擇上述標籤，不得創造任何新項目！
+
 **必須**在文末添加：
 `<!-- TAGS: ["標籤1", "標籤2", ...] -->`
 """
         else:
-            # 即使沒有 ontology，也要求生成 entities 和 tags
+            # 無 ontology 時的備用（但仍提供常見選項）
             ontology_hint = """
 ### 實體 (Entities) [必填]
-請識別 3-8 個核心商業概念（如：商業模式、產品市場匹配、定位策略等）：
+請從以下常見商業概念中選擇 3-8 個：
+商業模式, 創業, 產品市場匹配, 定位策略, 訂閱制, 內容行銷, 個人品牌, 精實創業, MVP, 獲利模式
+
 **必須**在文末添加：
 `<!-- ENTITIES: ["實體1", "實體2", ...] -->`
 
 ### 標籤 (Tags) [必填]
-請生成 3-5 個適合用於筆記分類的標籤：
+請從以下常見標籤中選擇 3-5 個：
+市場定位, 價值主張, 訂閱制, 內容行銷, 從零開始, 規模化, 自動化, 被動收入, AI工具
+
 **必須**在文末添加：
 `<!-- TAGS: ["標籤1", "標籤2", ...] -->`
 """
