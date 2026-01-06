@@ -217,9 +217,10 @@ class TranscriptFetcher:
         try:
             from groq import Groq
             
-            api_key = os.environ.get("GROQ_API_KEY")
+            # 支援多帳號輪換 (與 llm_client.py 一致)
+            api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY_1")
             if not api_key:
-                print("⚠️ GROQ_API_KEY 未設置")
+                print("⚠️ GROQ_API_KEY 或 GROQ_API_KEY_1 未設置")
                 return None
             
             client = Groq(api_key=api_key)
