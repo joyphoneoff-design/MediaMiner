@@ -333,6 +333,7 @@ if page == "📺 頻道擷取":
             whisper_backend = st.selectbox(
                 "Whisper 後端",
                 options=["groq", "mlx", "openai"],
+                index=0,  # 預設 groq (第一個選項)
                 format_func=lambda x: {
                     "mlx": "🖥️ MLX (本地 GPU)",
                     "groq": "⚡ Groq API (免費超快)", 
@@ -400,6 +401,10 @@ if page == "📺 頻道擷取":
                     extractor = KnowledgeExtractor()
                     injector = MetadataInjector()
                     
+                    # 捕獲當前設定值 (多線程安全)
+                    _whisper_backend = whisper_backend  # 使用當前選擇值
+                    _whisper_model = whisper_model
+                    
                     # 定義單個影片處理函數
                     def process_single_video(args):
                         video_idx, video = args
@@ -409,11 +414,11 @@ if page == "📺 頻道擷取":
                             filename = injector.generate_safe_filename(video['title'])
                             output_file = output_dir / f"{filename}.md"
                             
-                            # 獲取逐字稿
+                            # 獲取逐字稿 (使用閉包捕獲的值，確保多線程安全)
                             transcript = fetcher.fetch(
                                 video['url'],
-                                whisper_backend=st.session_state.get('whisper_backend', 'mlx'),
-                                whisper_model=st.session_state.get('whisper_model', 'large-v3-turbo')
+                                whisper_backend=_whisper_backend,
+                                whisper_model=_whisper_model
                             )
                             
                             if transcript:
