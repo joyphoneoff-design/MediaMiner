@@ -98,22 +98,56 @@ class MarkdownFormatter:
         
         frontmatter = "\n".join(frontmatter_lines)
         
-        # 組合 Markdown 內容
+        # 80/20 精簡 Markdown 結構
+        # 移除冗餘的 AI 知識提取區塊，保留核心內容
         markdown_parts = [
             frontmatter,
+            "",
+            "## 摘要",
+            "",
+            summary if summary else "_（無摘要）_",
             "",
             "## 逐字稿全文",
             "",
             content if content else "_（無逐字稿）_",
-            "",
-            "---",
-            "",
-            "## AI 知識提取",
-            "",
-            knowledge if knowledge else "_（無知識提取結果）_",
         ]
         
+        # 金句區塊 (從 knowledge 中提取，若有)
+        if knowledge:
+            # 提取金句部分
+            quotes = self._extract_quotes(knowledge)
+            if quotes:
+                markdown_parts.extend([
+                    "",
+                    "## 金句",
+                    "",
+                ])
+                markdown_parts.extend(quotes)
+        
+        # 相關連結區塊 (由 R2R smart_linker 後續填充)
+        markdown_parts.extend([
+            "",
+            "## 相關連結",
+            "",
+            "_（待 R2R Phase1 處理後自動填充）_",
+        ])
+        
         return '\n'.join(markdown_parts)
+    
+    def _extract_quotes(self, knowledge: str) -> list:
+        """從知識文本中提取金句"""
+        import re
+        quotes = []
+        
+        # 匹配 > 開頭的引用行
+        quote_pattern = re.findall(r'^>\s*["\']?(.+?)["\']?\s*$', knowledge, re.MULTILINE)
+        for q in quote_pattern[:3]:  # 最多 3 條
+            clean_quote = q.strip().strip('"\'')
+            if len(clean_quote) > 10:  # 過濾太短的
+                quotes.append(f'> "{clean_quote}"')
+                quotes.append("")
+        
+        return quotes
     
     def _determine_source_type(self, platform: str, video_info: Dict) -> str:
         """決定 source 類型"""
