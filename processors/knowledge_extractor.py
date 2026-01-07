@@ -374,6 +374,12 @@ class KnowledgeExtractor:
 **必須**在文末添加：
 `<!-- KEYWORDS: ["關鍵字1", "關鍵字2", ...] -->`
 
+### 講者標記 [必填]
+在格式化逐字稿中，請標記講者身份：
+- 若為單人影片，使用「**主講者 [{channel}]:**」
+- 若為訪談，主持人標記為「**主持人:**」，嘉賓標記為「**受訪者 [姓名]:**」
+- 無法識別講者時使用「**主講者:**」
+
 {ontology_hint}
 {guest_hint}
 """
@@ -515,7 +521,13 @@ class KnowledgeExtractor:
     
     def process_transcript(self, transcript: str, video_info: Dict = None) -> Dict:
         """
-        完整處理逐字稿（優化版）
+        完整處理逐字稿（優化版 - 單次 LLM 調用）
+        
+        80/20 優化：合併所有處理為單次 API 調用
+        - 講者識別（整合到 prompt）
+        - 知識提取
+        - 摘要/關鍵字/實體/標籤
+        - 逐字稿格式化
         
         Args:
             transcript: 原始逐字稿
@@ -525,21 +537,13 @@ class KnowledgeExtractor:
             處理結果
         """
         print("🔍 開始處理逐字稿...")
+        print("   📚 單次 API 調用中（講者+知識+格式化）...")
         
-        # 1. 智能判斷是否需要講者識別
-        if self._should_skip_speaker_id(video_info):
-            print("   ⚡ 跳過講者識別（單人內容）")
-            marked_transcript = transcript
-        else:
-            print("   👥 識別講者...")
-            marked_transcript = self.identify_speakers(transcript, video_info)
+        # 直接調用 extract_knowledge（已包含講者識別指令）
+        result = self.extract_knowledge(transcript, video_info)
         
-        # 2. 提取知識（已合併摘要和關鍵字）
-        print("   📚 提取商業知識...")
-        result = self.extract_knowledge(marked_transcript, video_info)
-        
-        # 3. 添加標記後的逐字稿
-        result["marked_transcript"] = marked_transcript
+        # 使用格式化後的逐字稿作為標記版本
+        result["marked_transcript"] = result.get('formatted_transcript') or transcript
         
         print("✅ 處理完成!")
         return result

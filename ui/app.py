@@ -442,7 +442,7 @@ if page == "📺 頻道擷取":
                                 
                                 # 逐字稿梳理：清理元數據 + 合併段落 + 加標點 + 簡轉繁
                                 raw_transcript = knowledge.get('formatted_transcript') or transcript['text']
-                                final_transcript = polisher.polish(raw_transcript, use_llm=True)
+                                final_transcript = polisher.polish(raw_transcript, use_llm=False)  # 暫時禁用 LLM 梳理以加速
                                 
                                 # 提取上傳年份 (如有)
                                 upload_date = video.get('upload_date', '')
