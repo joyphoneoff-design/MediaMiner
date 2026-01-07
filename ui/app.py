@@ -22,6 +22,7 @@ from scrapers.youtube_scraper import YouTubeScraper
 from scrapers.transcript_fetcher import TranscriptFetcher
 from processors.knowledge_extractor import KnowledgeExtractor
 from processors.metadata_injector import MetadataInjector
+from processors.transcript_polisher import TranscriptPolisher
 from integrations.r2r_connector import R2RConnector
 
 # ===========================================
@@ -400,6 +401,7 @@ if page == "📺 頻道擷取":
                     fetcher = TranscriptFetcher()
                     extractor = KnowledgeExtractor()
                     injector = MetadataInjector()
+                    polisher = TranscriptPolisher()  # 新增：逐字稿梳理器
                     
                     # 捕獲當前設定值 (多線程安全)
                     _whisper_backend = whisper_backend  # 使用當前選擇值
@@ -415,10 +417,12 @@ if page == "📺 頻道擷取":
                             output_file = output_dir / f"{filename}.md"
                             
                             # 獲取逐字稿 (使用閉包捕獲的值，確保多線程安全)
+                            # prefer_original_lang=True: 優先保留原語言字幕
                             transcript = fetcher.fetch(
                                 video['url'],
                                 whisper_backend=_whisper_backend,
-                                whisper_model=_whisper_model
+                                whisper_model=_whisper_model,
+                                prefer_original_lang=True  # 英文內容保持英文
                             )
                             
                             if transcript:
@@ -435,8 +439,15 @@ if page == "📺 頻道擷取":
                                 # 生成 MD
                                 # 將識別到的 guest 放入 video_info
                                 guest = knowledge.get('guest')
-                                # 使用格式化逐字稿 (含標點符號)，若無則使用原始
-                                final_transcript = knowledge.get('formatted_transcript') or transcript['text']
+                                
+                                # 逐字稿梳理：清理元數據 + 合併段落 + 加標點 + 簡轉繁
+                                raw_transcript = knowledge.get('formatted_transcript') or transcript['text']
+                                final_transcript = polisher.polish(raw_transcript, use_llm=True)
+                                
+                                # 提取上傳年份 (如有)
+                                upload_date = video.get('upload_date', '')
+                                upload_year = upload_date[:4] if upload_date and len(upload_date) >= 4 else None
+                                
                                 md_content = injector.create_markdown(
                                     content=final_transcript,
                                     knowledge=knowledge.get('knowledge', ''),
@@ -446,6 +457,7 @@ if page == "📺 頻道擷取":
                                         'platform': 'youtube',
                                         'url': video['url'],
                                         'duration': video.get('duration'),
+                                        'upload_year': upload_year,  # 新增：內容年份
                                         'guest': guest  # 訪談嘉賓
                                     },
                                     summary=knowledge.get('summary', ''),

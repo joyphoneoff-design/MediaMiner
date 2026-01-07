@@ -25,7 +25,13 @@ except ImportError:
 class TranscriptFetcher:
     """逐字稿擷取器類"""
     
-    SUBTITLE_LANGS = ["zh-TW", "zh-Hant", "zh-CN", "zh-Hans", "zh", "en"]
+    # 語言優先順序配置
+    # 英文內容：優先原語言 (English first)
+    SUBTITLE_LANGS_EN = ["en", "en-US", "en-GB", "en-AU"]
+    # 中文內容：優先繁體中文
+    SUBTITLE_LANGS_ZH = ["zh-TW", "zh-Hant", "zh-CN", "zh-Hans", "zh"]
+    # 預設：原語言優先 (英文優先於中文)
+    SUBTITLE_LANGS = ["en", "en-US", "zh-TW", "zh-Hant", "zh-CN", "zh-Hans", "zh"]
     
     def __init__(self, output_dir: str = "~/Documents/MediaMiner_Data/raw"):
         self.output_dir = Path(output_dir).expanduser()
@@ -376,7 +382,7 @@ class TranscriptFetcher:
     
     def fetch(self, video_url: str, use_whisper_fallback: bool = True, 
               whisper_backend: str = "mlx", whisper_model: str = "small",
-              progress_callback=None) -> Optional[Dict]:
+              progress_callback=None, prefer_original_lang: bool = True) -> Optional[Dict]:
         """
         智能擷取逐字稿
         優先順序: YouTube API → yt-dlp → Whisper
@@ -387,6 +393,7 @@ class TranscriptFetcher:
             whisper_backend: Whisper 後端 (mlx/groq/openai)
             whisper_model: Whisper 模型 (僅 mlx 使用)
             progress_callback: 進度回調函數 (接收字符串訊息)
+            prefer_original_lang: True=優先保留原語言 (英文內容保持英文)
             
         Returns:
             逐字稿資訊
@@ -416,20 +423,25 @@ class TranscriptFetcher:
         if result:
             lang = result.get('language', '')
             is_chinese = lang.startswith('zh') or lang in ['zh', 'zh-TW', 'zh-CN', 'zh-Hans', 'zh-Hant']
+            is_english = lang.startswith('en') or lang in ['en', 'en-US', 'en-GB']
             
-            # 小紅書內容：優先使用中文字幕，英文字幕則用 Whisper 重新辨識
+            # 小紅書內容：必須使用中文字幕
             is_xhs = 'xiaohongshu' in video_url or 'xhslink' in video_url
             
-            if is_chinese:
+            if is_xhs and is_chinese:
                 update_progress(f"✅ 使用 yt-dlp 獲取中文字幕 (語言: {lang})")
                 return result
-            elif not is_xhs:
-                # 非小紅書內容，接受任何語言字幕
-                update_progress(f"✅ 使用 yt-dlp 獲取字幕 (語言: {lang})")
-                return result
-            else:
+            elif is_xhs and not is_chinese:
                 # 小紅書內容但只有英文字幕，改用 Whisper 中文辨識
                 update_progress(f"⚠️ 僅有英文字幕，改用 Whisper 中文辨識...")
+            elif prefer_original_lang:
+                # 非小紅書：優先保留原語言（英文內容保持英文）
+                update_progress(f"✅ 使用 yt-dlp 獲取原語言字幕 (語言: {lang})")
+                return result
+            else:
+                # 舊行為：接受任何語言
+                update_progress(f"✅ 使用 yt-dlp 獲取字幕 (語言: {lang})")
+                return result
         
         # 3. Whisper 備用
         if use_whisper_fallback:
