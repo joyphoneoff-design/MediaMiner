@@ -332,11 +332,12 @@ class KnowledgeExtractor:
         
         # 準備上下文
         context = ""
+        channel = video_info.get('channel', '未知') if video_info else '未知'
         if video_info:
             context = f"""
 ## 影片資訊
 - 標題: {video_info.get('title', '未知')}
-- 來源: {video_info.get('channel', '未知')}
+- 來源: {channel}
 - 時長: {video_info.get('duration', '未知')}
 """
         
