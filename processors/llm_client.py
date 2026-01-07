@@ -59,26 +59,43 @@ class LLMClient:
         self.max_retries = 3
         # 智能限速追蹤
         self._rate_limit_count = 0
+        self._success_count = 0  # 連續成功計數
         self._last_rate_limit_time = 0
         self._recommended_workers = 10  # 預設最大
+        self._max_workers = 10  # 上限
+        self._min_workers = 2   # 下限
         
     def record_rate_limit(self):
-        """記錄 429 限速事件"""
+        """記錄 429 限速事件 (逐步降低)"""
         import time
         current_time = time.time()
-        # 1 分鐘內的限速事件才計數
+        
+        # 1 分鐘內的限速事件才累計
         if current_time - self._last_rate_limit_time > 60:
             self._rate_limit_count = 0
+        
         self._rate_limit_count += 1
+        self._success_count = 0  # 重置成功計數
         self._last_rate_limit_time = current_time
         
-        # 根據限速頻率調整建議並行數
-        if self._rate_limit_count >= 5:
-            self._recommended_workers = max(2, self._recommended_workers - 2)
-            print(f"   🔽 建議降低 API 並行數至 {self._recommended_workers}")
-        elif self._rate_limit_count >= 3:
-            self._recommended_workers = max(3, self._recommended_workers - 1)
-            print(f"   🔽 建議降低 API 並行數至 {self._recommended_workers}")
+        # 逐步降低 (每次降 1，最低 2)
+        if self._rate_limit_count >= 2:
+            old_workers = self._recommended_workers
+            self._recommended_workers = max(self._min_workers, self._recommended_workers - 1)
+            if self._recommended_workers < old_workers:
+                print(f"   🔽 降低並行數: {old_workers} → {self._recommended_workers}")
+    
+    def record_success(self):
+        """記錄成功事件 (用於自動恢復)"""
+        self._success_count += 1
+        
+        # 連續成功 5 次且有降速記錄時，嘗試恢復
+        if self._success_count >= 5 and self._recommended_workers < self._max_workers:
+            old_workers = self._recommended_workers
+            self._recommended_workers = min(self._max_workers, self._recommended_workers + 1)
+            if self._recommended_workers > old_workers:
+                print(f"   🔼 恢復並行數: {old_workers} → {self._recommended_workers}")
+            self._success_count = 0  # 重置計數
     
     def get_recommended_workers(self) -> int:
         """獲取建議的並行數"""
@@ -87,7 +104,8 @@ class LLMClient:
     def reset_rate_limit_tracking(self):
         """重置限速追蹤（新批次開始時）"""
         self._rate_limit_count = 0
-        self._recommended_workers = 10
+        self._success_count = 0
+        self._recommended_workers = self._max_workers
     
     def _auto_start_lmstudio(self, model: str) -> bool:
         """自動啟動 LM Studio 伺服器並載入模型"""
@@ -186,6 +204,7 @@ class LLMClient:
                     result = self._call_gemini(api_key, model, prompt, 
                                             system_prompt, max_tokens, temperature)
                     if result:
+                        self.record_success()  # 記錄成功
                         return result
                 elif name == "lmstudio":
                     try:
@@ -211,14 +230,17 @@ class LLMClient:
                         max_tokens, temperature
                     )
                     if result:
+                        self.record_success()  # 記錄成功
                         return result
             except Exception as e:
                 print(f"   ⚠️ {name} 失敗: {e}")
                 # 429 限速時記錄並等待，然後嘗試下一個 key
                 if "429" in str(e) or "rate limit" in str(e).lower() or "quota" in str(e).lower():
                     self.record_rate_limit()
-                    print(f"   ⏳ 等待 2 秒後嘗試下一個帳號...")
-                    time.sleep(2)
+                    # 指數退避延遲: 2, 4, 8 秒...
+                    delay = min(2 ** self._rate_limit_count, 16)
+                    print(f"   ⏳ 等待 {delay} 秒後嘗試下一個帳號...")
+                    time.sleep(delay)
                     continue  # 嘗試下一個 key
                 # 其他錯誤也嘗試下一個 key
                 continue
