@@ -484,10 +484,19 @@ if page == "📺 頻道擷取":
                     if whisper_backend in ['groq', 'openai'] and api_workers > 1:
                         # === API 後端：多線程並行處理 ===
                         from concurrent.futures import ThreadPoolExecutor, as_completed
+                        from processors.llm_client import get_llm_client
                         
-                        status_container.info(f"📦 批次 {batch_idx + 1}/{total_batches} - 多線程處理 ({api_workers} workers)")
+                        # 動態調整並行數 (根據 429 限速反饋)
+                        llm_client = get_llm_client()
+                        recommended = llm_client.get_recommended_workers()
+                        actual_workers = min(api_workers, recommended)
                         
-                        with ThreadPoolExecutor(max_workers=api_workers) as executor:
+                        if actual_workers < api_workers:
+                            status_container.warning(f"⚠️ API 限流中，自動降低並行數: {api_workers} → {actual_workers}")
+                        
+                        status_container.info(f"📦 批次 {batch_idx + 1}/{total_batches} - 多線程處理 ({actual_workers} workers)")
+                        
+                        with ThreadPoolExecutor(max_workers=actual_workers) as executor:
                             futures = {
                                 executor.submit(process_single_video, (batch_start + i, video)): i 
                                 for i, video in enumerate(batch_videos)
