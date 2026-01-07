@@ -87,42 +87,73 @@ class TranscriptFetcher:
         Returns:
             {'text': ..., 'language': ..., 'source': 'yt-dlp', 'file': ...}
         """
-        temp_dir = self.output_dir / "_temp"
-        temp_dir.mkdir(exist_ok=True)
+        import uuid
+        
+        # 提取 video_id 用於精確匹配
+        video_id = self._extract_video_id(video_url)
+        
+        # 使用唯一的臨時目錄避免多線程/批次污染
+        unique_id = str(uuid.uuid4())[:8]
+        temp_dir = self.output_dir / "_temp" / f"yt_{unique_id}"
+        temp_dir.mkdir(parents=True, exist_ok=True)
         
         langs = ",".join(self.SUBTITLE_LANGS)
         
-        # 先嘗試手動字幕
-        for auto_flag in ["--write-sub", "--write-auto-sub"]:
-            cmd = [
-                "yt-dlp",
-                "--skip-download",
-                auto_flag,
-                "--sub-langs", langs,
-                "--sub-format", "vtt/srt/best",
-                "-o", str(temp_dir / "%(id)s.%(ext)s"),
-                video_url
-            ]
-            
-            try:
-                subprocess.run(cmd, capture_output=True, check=True)
+        try:
+            # 先嘗試手動字幕，再嘗試自動字幕
+            for auto_flag in ["--write-sub", "--write-auto-sub"]:
+                cmd = [
+                    "yt-dlp",
+                    "--skip-download",
+                    auto_flag,
+                    "--sub-langs", langs,
+                    "--sub-format", "vtt/srt/best",
+                    "-o", str(temp_dir / "%(id)s.%(ext)s"),
+                    "--cookies-from-browser", "chrome",
+                    video_url
+                ]
                 
-                # 查找字幕檔案
-                for ext in ['.vtt', '.srt']:
-                    for f in temp_dir.glob(f"*{ext}"):
-                        text = self._parse_subtitle_file(f)
-                        lang = self._detect_language_from_filename(f.name)
-                        return {
-                            'text': text,
-                            'language': lang,
-                            'source': 'yt-dlp',
-                            'file': str(f),
-                            'is_auto': 'auto' in auto_flag
-                        }
-            except subprocess.CalledProcessError:
-                continue
-        
-        return None
+                try:
+                    subprocess.run(cmd, capture_output=True, check=True, timeout=60)
+                    
+                    # 查找這個影片的字幕檔案 (使用 video_id 精確匹配)
+                    for ext in ['.vtt', '.srt']:
+                        # 優先匹配 video_id
+                        if video_id:
+                            pattern = f"{video_id}*{ext}"
+                        else:
+                            pattern = f"*{ext}"
+                        
+                        for f in temp_dir.glob(pattern):
+                            text = self._parse_subtitle_file(f)
+                            lang = self._detect_language_from_filename(f.name)
+                            
+                            # 清理臨時檔案
+                            try:
+                                import shutil
+                                shutil.rmtree(temp_dir)
+                            except: pass
+                            
+                            return {
+                                'text': text,
+                                'language': lang,
+                                'source': 'yt-dlp',
+                                'file': str(f),
+                                'is_auto': 'auto' in auto_flag
+                            }
+                except subprocess.CalledProcessError:
+                    continue
+                except subprocess.TimeoutExpired:
+                    continue
+            
+            return None
+        finally:
+            # 確保清理臨時目錄
+            try:
+                import shutil
+                if temp_dir.exists():
+                    shutil.rmtree(temp_dir)
+            except: pass
     
     def fetch_with_whisper(self, video_url: str, model: str = "small", backend: str = "mlx") -> Optional[Dict]:
         """
