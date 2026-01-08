@@ -392,6 +392,14 @@ class KnowledgeExtractor:
 {ontology_hint}
 {guest_hint}
 """
+        # 動態調整 max_tokens：長逐字稿需要更多輸出空間
+        transcript_length = len(clean_transcript)
+        if transcript_length > 20000:  # 超過 2 萬字元 (約 60 分鐘影片)
+            max_tokens = 15000
+        elif transcript_length > 10000:  # 超過 1 萬字元 (約 30 分鐘影片)
+            max_tokens = 12000
+        else:
+            max_tokens = 8000
         
         result_text = self.llm.generate(
             prompt=prompt,
@@ -407,7 +415,7 @@ class KnowledgeExtractor:
 
 【輸出要求】
 請在文末按指定格式添加所有必填標記（摘要、關鍵字、實體、標籤、格式化逐字稿）。每個標記都必須輸出。""",
-            max_tokens=6000,
+            max_tokens=max_tokens,
             temperature=0.3  # 降低溫度以提高翻譯穩定性
         )
         
