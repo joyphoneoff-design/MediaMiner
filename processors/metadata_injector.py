@@ -99,22 +99,17 @@ class MarkdownFormatter:
         frontmatter = "\n".join(frontmatter_lines)
         
         # 80/20 精簡 Markdown 結構
-        # 移除冗餘的 AI 知識提取區塊，保留核心內容
+        # 順序: 摘要 → 金句 → 相關連結 → 正文
         markdown_parts = [
             frontmatter,
             "",
             "## 摘要",
             "",
             summary if summary else "_（無摘要）_",
-            "",
-            "## 逐字稿全文",
-            "",
-            content if content else "_（無逐字稿）_",
         ]
         
         # 金句區塊 (從 knowledge 中提取，若有)
         if knowledge:
-            # 提取金句部分
             quotes = self._extract_quotes(knowledge)
             if quotes:
                 markdown_parts.extend([
@@ -123,6 +118,14 @@ class MarkdownFormatter:
                     "",
                 ])
                 markdown_parts.extend(quotes)
+        else:
+            # 無金句時仍保留區塊結構
+            markdown_parts.extend([
+                "",
+                "## 金句",
+                "",
+                "_（無金句）_",
+            ])
         
         # 相關連結區塊 (由 R2R smart_linker 後續填充)
         markdown_parts.extend([
@@ -130,6 +133,14 @@ class MarkdownFormatter:
             "## 相關連結",
             "",
             "_（待 R2R Phase1 處理後自動填充）_",
+        ])
+        
+        # 正文放最後
+        markdown_parts.extend([
+            "",
+            "## 逐字稿全文",
+            "",
+            content if content else "_（無逐字稿）_",
         ])
         
         return '\n'.join(markdown_parts)
