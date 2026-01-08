@@ -36,6 +36,47 @@ class KnowledgeExtractor:
             return prompt_file.read_text(encoding='utf-8')
         return ""
     
+    def _smart_sample(self, content: str, target_length: int = 10000) -> str:
+        """
+        智慧採樣：開頭 + 中間 + 結尾
+        
+        80/20 優化：以最小成本（不增加 token）獲得最大覆蓋率提升
+        
+        Args:
+            content: 完整內容
+            target_length: 目標採樣長度（默認 10000）
+        
+        Returns:
+            採樣後的內容
+        """
+        total_len = len(content)
+        
+        # 內容不長，直接返回
+        if total_len <= target_length:
+            return content
+        
+        # 計算各部分長度（開頭50% + 中間30% + 結尾20%）
+        head_len = int(target_length * 0.5)
+        middle_len = int(target_length * 0.3)
+        tail_len = int(target_length * 0.2)
+        
+        # 提取開頭
+        head = content[:head_len]
+        
+        # 提取中間（從 40% 位置開始）
+        middle_start = int(total_len * 0.4)
+        middle = content[middle_start:middle_start + middle_len]
+        
+        # 提取結尾
+        tail = content[-tail_len:]
+        
+        # 組合（添加分隔符）
+        sampled = f"{head}\n\n[...中間內容省略...]\n\n{middle}\n\n[...後續內容省略...]\n\n{tail}"
+        
+        print(f"   📊 智慧採樣: {total_len} → {len(sampled)} 字 (開頭+中段+結尾)")
+        
+        return sampled
+    
     def identify_speakers(self, transcript: str, video_info: Dict = None) -> str:
         """
         識別講者（使用影片元數據輔助識別）
@@ -269,10 +310,11 @@ class KnowledgeExtractor:
         Returns:
             提取的知識 {'summary': ..., 'knowledge': ..., 'keywords': ..., 'entities': ..., 'tags': ..., 'guest': ..., 'formatted_transcript': ...}
         """
-        # 智能截斷：移除重複行
+        # 智慧採樣優化：移除重複行後使用智慧採樣
         lines = transcript.split('\n')
         unique_lines = list(dict.fromkeys(lines))
-        clean_transcript = '\n'.join([l for l in unique_lines if len(l.strip()) > 5])[:10000]
+        full_transcript = '\n'.join([l for l in unique_lines if len(l.strip()) > 5])
+        clean_transcript = self._smart_sample(full_transcript, 10000)
         
         # 載入本體論實體 (80/20 優化)
         ontology_entities = self._load_ontology_entities()
