@@ -461,6 +461,17 @@ class KnowledgeExtractor:
 - 若為訪談，主持人標記為「**主持人:**」，嘉賓標記為「**受訪者 [姓名]:**」
 - 無法識別講者時使用「**主講者:**」
 
+### 精選金句 (Quotes) [必填]
+從內容中提取 3-5 條最精華的金句。
+**金句標準：**
+- 洞察性強：能啟發思考或提供新視角
+- 實用性強：可直接應用或指導行動
+- 簡潔有力：一句話說清，不超過 50 字
+- 獨特性：非常識，非陳詞濫調
+**必須**在文末添加：
+`<!-- QUOTES: ["金句1", "金句2", ...] -->`
+若內容質量不高，返回空陣列。
+
 {ontology_hint}
 {guest_hint}
 """
@@ -537,6 +548,16 @@ class KnowledgeExtractor:
             except:
                 pass
         
+        # 提取金句 (v8.0 新增：單次調用完成)
+        quotes = []
+        quotes_match = re.search(r'<!-- QUOTES: (\[.*?\]) -->', result_text)
+        if quotes_match:
+            try:
+                quotes = json.loads(quotes_match.group(1))
+                knowledge = knowledge.replace(quotes_match.group(0), '')
+            except:
+                pass
+        
         # 提取訪談嘉賓 (條件式：只在訪談內容時提取)
         guest = None
         guest_match = re.search(r'<!-- GUEST: "(.+?)" -->', result_text)
@@ -568,6 +589,7 @@ class KnowledgeExtractor:
             "keywords": keywords,
             "entities": validated_entities,  # 驗證後的 entities
             "tags": validated_tags,  # 驗證後的 tags
+            "quotes": quotes,  # v8.0 新增：單次調用提取
             "guest": guest,
             "formatted_transcript": formatted_transcript,
             "metadata": {
@@ -578,7 +600,8 @@ class KnowledgeExtractor:
                 "ontology_used": len(ontology_entities) > 0,
                 "is_interview": is_interview,
                 "entities_validated": len(validated_entities) > 0,
-                "tags_validated": len(validated_tags) > 0
+                "tags_validated": len(validated_tags) > 0,
+                "quotes_extracted": len(quotes) > 0  # v8.0 新增
             }
         }
     def _should_skip_speaker_id(self, video_info: Dict) -> bool:
