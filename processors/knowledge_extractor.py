@@ -36,7 +36,7 @@ class KnowledgeExtractor:
             return prompt_file.read_text(encoding='utf-8')
         return ""
     
-    def _smart_sample(self, content: str, target_length: int = 10000) -> str:
+    def _smart_sample(self, content: str, target_length: int = None) -> str:
         """
         智慧採樣：開頭 + 中間 + 結尾
         
@@ -44,12 +44,16 @@ class KnowledgeExtractor:
         
         Args:
             content: 完整內容
-            target_length: 目標採樣長度（默認 10000）
+            target_length: 目標採樣長度（若為 None 則動態計算）
         
         Returns:
             採樣後的內容
         """
         total_len = len(content)
+        
+        # 動態計算採樣長度
+        if target_length is None:
+            target_length = self._get_dynamic_sample_length(total_len)
         
         # 內容不長，直接返回
         if total_len <= target_length:
@@ -76,6 +80,32 @@ class KnowledgeExtractor:
         print(f"   📊 智慧採樣: {total_len} → {len(sampled)} 字 (開頭+中段+結尾)")
         
         return sampled
+    
+    def _get_dynamic_sample_length(self, content_length: int) -> int:
+        """
+        動態採樣長度 (YouTube / 小紅書逐字稿)
+        
+        Token 預算分析 (Cerebras 131K tokens):
+        - 系統 Prompt: ~1K tokens
+        - 輸出預留: ~15K tokens (含格式化逐字稿)
+        - 可用輸入: ~115K tokens ≈ 170K 字
+        
+        YouTube/小紅書逐字稿特性：
+        - 需要更多採樣以確保完整知識提取
+        - 包含格式化輸出需預留更多輸出 token
+        
+        Returns:
+            建議採樣長度
+        """
+        if content_length > 100000:
+            return 15000  # 超長逐字稿 (>100K) - 約 2-3 小時影片
+        elif content_length > 50000:
+            return 12000  # 長逐字稿 (50K-100K) - 約 1-2 小時影片
+        elif content_length > 20000:
+            return 10000  # 中逐字稿 (20K-50K) - 約 30-60 分鐘影片
+        else:
+            return 6000   # 短逐字稿 (<20K) - 約 <30 分鐘影片
+
     
     def identify_speakers(self, transcript: str, video_info: Dict = None) -> str:
         """
@@ -310,11 +340,11 @@ class KnowledgeExtractor:
         Returns:
             提取的知識 {'summary': ..., 'knowledge': ..., 'keywords': ..., 'entities': ..., 'tags': ..., 'guest': ..., 'formatted_transcript': ...}
         """
-        # 智慧採樣優化：移除重複行後使用智慧採樣
+        # 智慧採樣優化：移除重複行後使用動態智慧採樣
         lines = transcript.split('\n')
         unique_lines = list(dict.fromkeys(lines))
         full_transcript = '\n'.join([l for l in unique_lines if len(l.strip()) > 5])
-        clean_transcript = self._smart_sample(full_transcript, 10000)
+        clean_transcript = self._smart_sample(full_transcript)  # 動態採樣 (6K-15K)
         
         # 載入本體論實體 (80/20 優化)
         ontology_entities = self._load_ontology_entities()
